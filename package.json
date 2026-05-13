@@ -1,0 +1,26 @@
+{
+  "name": "kitchen-flow-monitor",
+  "version": "2.0.0",
+  "description": "Monitor de pedidos Saipos - Arquitetura Cloud",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend",
+    "electron-bridge"
+  ],
+  "scripts": {
+    "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install && cd ../electron-bridge && npm install",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:electron": "cd electron-bridge && npm run dev",
+    "build:electron": "cd electron-bridge && npm run build",
+    "build:all": "npm run build:electron",
+    "lint": "eslint . --ext .js",
+    "postinstall": "echo '✅ Instale os sub-projetos: cd backend && npm install, etc.'"
+  },
+  "author": "Kitchen Flow Team",
+  "license": "MIT",
+  "devDependencies": {
+    "eslint": "^8.56.0"
+  }
+}

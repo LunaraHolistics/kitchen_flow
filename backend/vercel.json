@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "builds": [
+    { "src": "**/*", "use": "@vercel/static" }
+  ],
+  "routes": [
+    { "handle": "filesystem" },
+    { "src": "/.*", "status": 404, "dest": "/index.html" }
+  ],
+  "env": {
+    "VITE_BACKEND_URL": "https://seu-backend.onrender.com"
+  },
+  "github": {
+    "silent": true
+  }
+}

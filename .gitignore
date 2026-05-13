@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Build outputs
+dist/
+build/
+out/
+
+# Electron
+*.exe
+*.msi
+*.dmg
+*.AppImage
+
+# Storage (não versionar dados)
+backend/storage/*.json
+!backend/storage/.gitkeep
+
+# Environment
+.env
+*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Cache
+.cache/
+tmp/
+temp/

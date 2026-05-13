@@ -1,0 +1,48 @@
+{
+  "name": "kitchen-flow-bridge",
+  "version": "2.0.0",
+  "description": "Bridge Electron para monitorar downloads e enviar ao backend",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder --win",
+    "build:dir": "electron-builder --dir --win",
+    "postinstall": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "chokidar": "^3.5.3",
+    "uuid": "^9.0.1",
+    "moment": "^2.29.4"
+  },
+  "devDependencies": {
+    "electron": "^27.0.0",
+    "electron-builder": "^24.9.1"
+  },
+  "build": {
+    "appId": "com.kitchenflow.bridge",
+    "productName": "Kitchen Flow Bridge",
+    "win": {
+      "target": [{"target": "nsis", "arch": ["x64"]}],
+      "icon": "icon.png",
+      "requestedExecutionLevel": "asInvoker"
+    },
+    "nsis": {
+      "oneClick": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Kitchen Flow Bridge",
+      "runAfterFinish": true,
+      "installerLanguages": ["pt_BR"]
+    },
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!dist/**/*",
+      "!node_modules/*/{test,__tests__,example}",
+      "!**/*.{md,txt}"
+    ]
+  }
+}

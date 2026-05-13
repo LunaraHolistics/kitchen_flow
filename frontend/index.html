@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>🍳 Kitchen Flow</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" type="image/png" href="icon.png">
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <h1>🍳 Kitchen Flow</h1>
+      <span id="connStatus" class="status offline">🔴 Offline</span>
+    </div>
+    <div class="info">
+      <span id="clock">--:--</span>
+      <span id="clientId" class="client-id">...</span>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="geral">📋 Geral<span id="badgeGeral" class="badge">0</span></button>
+    <button class="tab" data-tab="setor">🏭 Setor<span id="badgeSetor" class="badge">0</span></button>
+    <button class="tab" data-tab="concluidos">✅ Concluídos<span id="badgeConcluidos" class="badge">0</span></button>
+  </nav>
+
+  <main class="content">
+    <!-- GERAL -->
+    <section id="tab-geral" class="tab-content active">
+      <div id="ordersGeral" class="orders-grid">
+        <div class="empty">
+          <span class="empty-icon">🍽️</span>
+          <p>Nenhum pedido ativo</p>
+          <small>Aguardando pedidos do Saipos...</small>
+        </div>
+      </div>
+    </section>
+
+    <!-- SETOR -->
+    <section id="tab-setor" class="tab-content">
+      <div id="sectors" class="sectors-wrap"></div>
+    </section>
+
+    <!-- CONCLUÍDOS -->
+    <section id="tab-concluidos" class="tab-content">
+      <div id="completed" class="completed-list">
+        <div class="empty">
+          <span class="empty-icon">✨</span>
+          <p>Nenhum concluído</p>
+          <small>Pedidos finalizados aparecem aqui</small>
+        </div>
+      </div>
+      <button id="clearCompleted" class="btn-clear">🗑️ Limpar Concluídos</button>
+    </section>
+  </main>
+
+  <!-- Modal de Confirmação -->
+  <dialog id="modal" class="modal">
+    <div class="modal-box">
+      <h3>Confirmar Ação</h3>
+      <p id="modalMsg">Deseja prosseguir?</p>
+      <div class="modal-actions">
+        <button id="modalNo" class="btn">Cancelar</button>
+        <button id="modalYes" class="btn danger">Confirmar</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Toast Notifications -->
+  <div id="toasts" class="toasts"></div>
+
+  <!-- Config (debug) -->
+  <div id="configPanel" class="config-panel hidden">
+    <h4>⚙️ Configuração</h4>
+    <label>Backend URL: <input type="text" id="backendUrl" value=""></label>
+    <button id="saveConfig" class="btn btn-small">Salvar</button>
+    <button id="toggleConfig" class="btn btn-small">Fechar</button>
+  </div>
+  <button id="openConfig" class="config-toggle">⚙️</button>
+
+  <script src="app.js"></script>
+</body>
+</html>
