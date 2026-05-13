@@ -1,7 +1,7 @@
 {
   "name": "kitchen-flow-monitor",
   "version": "2.0.0",
-  "description": "Monitor de pedidos Saipos - Arquitetura Cloud",
+  "description": "Monitor de pedidos Saipos - Arquitetura Cloud Vercel + Render",
   "private": true,
   "workspaces": [
     "backend",
@@ -15,8 +15,7 @@
     "dev:electron": "cd electron-bridge && npm run dev",
     "build:electron": "cd electron-bridge && npm run build",
     "build:all": "npm run build:electron",
-    "lint": "eslint . --ext .js",
-    "postinstall": "echo '✅ Instale os sub-projetos: cd backend && npm install, etc.'"
+    "lint": "eslint . --ext .js"
   },
   "author": "Kitchen Flow Team",
   "license": "MIT",

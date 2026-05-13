@@ -8,7 +8,7 @@
     { "src": "/.*", "status": 404, "dest": "/index.html" }
   ],
   "env": {
-    "VITE_BACKEND_URL": "https://seu-backend.onrender.com"
+    "VITE_BACKEND_URL": "https://kitchen-flow-swq2.onrender.com"
   },
   "github": {
     "silent": true

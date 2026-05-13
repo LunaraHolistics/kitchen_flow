@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "serve -l 3000",
     "build": "echo 'Frontend estático - sem build necessário'",
-    "preview": "serve -l 3000 dist"
+    "preview": "serve -l 3000"
   },
   "devDependencies": {
     "serve": "^14.2.1"

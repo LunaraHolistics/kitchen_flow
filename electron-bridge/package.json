@@ -1,7 +1,7 @@
 {
   "name": "kitchen-flow-bridge",
   "version": "2.0.0",
-  "description": "Bridge Electron para monitorar downloads e enviar ao backend",
+  "description": "Bridge para monitorar downloads do Saipos",
   "main": "main.js",
   "scripts": {
     "start": "electron .",

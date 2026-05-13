@@ -1,41 +1,57 @@
 # Dependencies
 node_modules/
 package-lock.json
+yarn.lock
+pnpm-lock.yaml
 
 # Build outputs
 dist/
 build/
 out/
+.next/
 
 # Electron
 *.exe
 *.msi
 *.dmg
 *.AppImage
+*.blockmap
 
 # Storage (não versionar dados)
 backend/storage/*.json
 !backend/storage/.gitkeep
+electron-bridge/processed/
 
 # Environment
 .env
-*.local
+*.env.local
+*.env.production
 
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # Logs
 *.log
 logs/
+npm-debug.log*
 
 # IDE
 .idea/
 .vscode/
 *.swp
 *.swo
+*.swn
 
 # Cache
 .cache/
 tmp/
 temp/
+*.tmp
+
+# Vercel
+.vercel/
+
+# Render
+/render-data/

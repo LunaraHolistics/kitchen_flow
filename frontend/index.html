@@ -7,12 +7,16 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>🍳 Kitchen Flow</title>
   <link rel="stylesheet" href="style.css">
-  <link rel="icon" type="image/png" href="icon.png">
+  <link rel="icon" type="image/png" href="fazenda.png">
 </head>
 <body>
   <header class="app-header">
     <div class="brand">
-      <h1>🍳 Kitchen Flow</h1>
+      <div class="logo-wrapper">
+        <img src="fazenda.png" alt="Kitchen Flow" class="brand-logo" onerror="this.parentElement.querySelector('.logo-fallback').style.display='flex'">
+        <span class="logo-fallback">🍳</span>
+      </div>
+      <h1>Kitchen Flow</h1>
       <span id="connStatus" class="status offline">🔴 Offline</span>
     </div>
     <div class="info">
@@ -72,7 +76,7 @@
   <!-- Toast Notifications -->
   <div id="toasts" class="toasts"></div>
 
-  <!-- Config (debug) -->
+  <!-- Config Panel (debug) -->
   <div id="configPanel" class="config-panel hidden">
     <h4>⚙️ Configuração</h4>
     <label>Backend URL: <input type="text" id="backendUrl" value=""></label>

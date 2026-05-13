@@ -13,19 +13,28 @@ const wss = new WebSocket.Server({ server });
 // Config
 const PORT = process.env.PORT || 4545;
 const FRONTEND_URL = process.env.FRONTEND_URL || '*';
-const API_KEY = process.env.ELECTRON_API_KEY; // opcional
+const API_KEY = process.env.ELECTRON_API_KEY;
 const storage = new Storage({
   type: process.env.STORAGE_TYPE || 'json',
   maxOrders: parseInt(process.env.MAX_ORDERS) || 500
 });
 
 // Middleware
-app.use(cors({ origin: FRONTEND_URL === '*' ? '*' : [FRONTEND_URL] }));
-app.use(express.json({ limit: '1mb' }));
+app.use(cors({ 
+  origin: FRONTEND_URL === '*' ? '*' : [FRONTEND_URL],
+  credentials: true 
+}));
+app.use(express.json({ limit: '2mb' }));
 
 // Health check
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: moment().toISOString(), uptime: process.uptime() });
+  res.json({ 
+    status: 'ok', 
+    timestamp: moment().toISOString(), 
+    uptime: process.uptime(),
+    clients: wss.clients.size,
+    memory: Math.round(process.memoryUsage().heapUsed / 1024 / 1024)
+  });
 });
 
 // Stats endpoint
@@ -33,48 +42,55 @@ app.get('/api/stats', async (req, res) => {
   try {
     const stats = await storage.getStats();
     res.json(stats);
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch(e) { 
+    res.status(500).json({ error: e.message }); 
+  }
 });
 
-// 🔥 Endpoint principal: Electron envia novo pedido aqui
+// 🔥 Endpoint principal: Electron envia novo pedido
 app.post('/api/orders', async (req, res) => {
-  // Autenticação simples (opcional)
+  // Autenticação opcional
   if (API_KEY && req.headers['x-api-key'] !== API_KEY) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
   try {
-    const { sourceFile, mockData, ...extra } = req.body;
+    const { sourceFile, mockData, bridgeId, ...extra } = req.body;
     
-    // Validação mínima
+    // Validação
     if (!mockData?.itens || !Array.isArray(mockData.itens)) {
-      return res.status(400).json({ error: 'Invalid order data' });
+      return res.status(400).json({ 
+        error: 'Invalid order data',
+        required: { mockData: { itens: 'array' } }
+      });
     }
 
     const order = {
       id: Date.now(),
       uuid: uuidv4(),
-      mesa: mockData.mesa || 'Mesa ?',
+      mesa: mockData.mesa || `Mesa ${Math.floor(Math.random()*20)+1}`,
       tipo: mockData.tipo || 'salao',
       status: 'novo',
       horario: moment().format('HH:mm'),
       createdAt: moment().toISOString(),
       sourceFile: sourceFile || 'unknown',
+      bridgeId: bridgeId || 'unknown',
       itens: mockData.itens.map((it, i) => ({
         uuid: uuidv4(),
         setor: it.setor || 'Fogão',
         item: it.item || 'Item',
-        quantidade: it.quantidade || 1
+        quantidade: parseInt(it.quantidade) || 1
       })),
+      sectorStatus: {},
       ...extra
     };
 
     const saved = await storage.saveOrder(order);
     
-    // Broadcast para todos os tablets conectados
+    // Broadcast para todos os tablets
     broadcast({ type: 'NEW_ORDER', order: saved });
     
-    console.log(`✅ Pedido criado: ${order.mesa} (${order.itens.length} itens)`);
+    console.log(`✅ Pedido #${order.id}: ${order.mesa} (${order.itens.length} itens)`);
     res.status(201).json({ success: true, order: saved });
     
   } catch(e) {
@@ -83,27 +99,48 @@ app.post('/api/orders', async (req, res) => {
   }
 });
 
-// WebSocket: tablets se conectam aqui
+// WebSocket connections
 wss.on('connection', (ws, req) => {
   const clientId = uuidv4().slice(0, 8);
-  const clientInfo = { id: clientId, ip: req.socket?.remoteAddress, connectedAt: moment().toISOString() };
+  const clientInfo = { 
+    id: clientId, 
+    ip: req.socket?.remoteAddress, 
+    connectedAt: moment().toISOString(),
+    lastPing: Date.now()
+  };
   
-  console.log(`🔗 Tablet conectado: ${clientId}`);
+  console.log(`🔗 Tablet conectado: ${clientId} (${clientInfo.ip})`);
   
   // Enviar pedidos existentes ao conectar
   storage.getAll().then(orders => {
-    ws.send(JSON.stringify({ type: 'INIT', orders, serverTime: moment().format('HH:mm:ss') }));
+    ws.send(JSON.stringify({ 
+      type: 'INIT', 
+      orders, 
+      clientId,
+      serverTime: moment().format('HH:mm:ss')
+    }));
   });
 
   ws.on('message', async (data) => {
     try {
       const msg = JSON.parse(data.toString());
+      clientInfo.lastPing = Date.now();
       await handleClientMessage(clientId, msg, ws);
-    } catch(e) { console.error('WS message error:', e.message); }
+    } catch(e) { 
+      console.error('WS message error:', e.message); 
+    }
   });
 
-  ws.on('close', () => console.log(`🔌 Tablet desconectado: ${clientId}`));
-  ws.on('error', (e) => console.error(`❌ WS error ${clientId}:`, e.message));
+  ws.on('close', () => {
+    console.log(`🔌 Tablet desconectado: ${clientId}`);
+  });
+  
+  ws.on('error', (e) => {
+    console.error(`❌ WS error ${clientId}:`, e.message);
+  });
+  
+  ws.isAlive = true;
+  ws.on('pong', () => { ws.isAlive = true; });
 });
 
 // Handler de mensagens dos tablets
@@ -113,11 +150,25 @@ async function handleClientMessage(clientId, msg, ws) {
   switch(type) {
     case 'UPDATE_STATUS': {
       const { orderId, status, sector } = payload;
+      
+      const orders = await storage.getAll();
+      const order = orders.find(o => o.id === orderId);
+      if (!order) {
+        ws.send(JSON.stringify({ type: 'ERROR', message: 'Order not found' }));
+        return;
+      }
+      
       const updates = { status };
-      if (sector) updates.sectorStatus = { ...(await storage.getAll()).find(o=>o.id===orderId)?.sectorStatus || {}, [sector]: status };
+      if (sector) {
+        updates.sectorStatus = { 
+          ...(order.sectorStatus || {}), 
+          [sector]: status 
+        };
+      }
       
       const updated = await storage.updateOrder(orderId, updates);
       broadcast({ type: 'ORDER_UPDATED', order: updated }, clientId);
+      
       console.log(`📝 Pedido #${orderId}: ${status}${sector ? ` [${sector}]` : ''}`);
       break;
     }
@@ -133,12 +184,20 @@ async function handleClientMessage(clientId, msg, ws) {
     case 'PING':
       ws.send(JSON.stringify({ type: 'PONG', timestamp: moment().toISOString() }));
       break;
+      
+    case 'REQUEST_FULL_SYNC':
+      const orders = await storage.getAll();
+      ws.send(JSON.stringify({ type: 'INIT', orders, clientId }));
+      break;
   }
 }
 
 // Broadcast para todos os clientes (exceto origin)
 function broadcast(message, excludeClientId = null) {
-  const payload = JSON.stringify({ ...message, timestamp: moment().toISOString() });
+  const payload = JSON.stringify({ 
+    ...message, 
+    timestamp: moment().toISOString() 
+  });
   let sent = 0;
   
   wss.clients.forEach(client => {
@@ -152,17 +211,25 @@ function broadcast(message, excludeClientId = null) {
 }
 
 // Heartbeat para manter conexões ativas
-setInterval(() => {
+const heartbeatInterval = setInterval(() => {
   wss.clients.forEach(ws => {
-    if (ws.isAlive === false) return ws.terminate();
+    if (ws.isAlive === false) {
+      console.log('🔥 Terminating stale connection');
+      return ws.terminate();
+    }
     ws.isAlive = false;
     ws.ping();
   });
 }, 30000);
 
-wss.on('connection', ws => {
-  ws.isAlive = true;
-  ws.on('pong', () => { ws.isAlive = true; });
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('🛑 Encerrando...');
+  clearInterval(heartbeatInterval);
+  server.close(() => {
+    wss.close();
+    process.exit(0);
+  });
 });
 
 // Start server
@@ -171,15 +238,7 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`📡 WebSocket: ws://localhost:${PORT}`);
   console.log(`🌐 API: http://localhost:${PORT}/api/orders`);
   console.log(`✅ Health: http://localhost:${PORT}/health`);
-});
-
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('🛑 Encerrando...');
-  server.close(() => {
-    wss.close();
-    process.exit(0);
-  });
+  console.log(`🔒 API Key: ${API_KEY ? 'Enabled' : 'Disabled'}`);
 });
 
 module.exports = { app, server, wss, storage };

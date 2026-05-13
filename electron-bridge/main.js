@@ -1,11 +1,11 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const moment = require('moment');
 const Watcher = require('./watcher');
 
-// Config - pode ser alterada via arquivo ou CLI
+// Config
 const CONFIG = {
   DOWNLOAD_PATH: process.env.KFM_DOWNLOAD_PATH || 'C:\\downloads',
   BACKEND_URL: process.env.KFM_BACKEND_URL || 'http://localhost:4545',
@@ -13,32 +13,25 @@ const CONFIG = {
   AUTO_START: process.env.KFM_AUTO_START !== 'false'
 };
 
-// Estado global
-let mainWindow, tray, watcher, isQuitting = false;
+let mainWindow, tray, watcher;
+let isQuitting = false;
+const BRIDGE_ID = uuidv4().slice(0, 8);
 
-// Logger simples (console + arquivo opcional)
 function log(level, msg, data = null) {
   const entry = `[${moment().format('HH:mm:ss')}] [${level}] ${msg}`;
   console.log(entry);
-  if (data) console.log('  →', data);
-  
-  // Opcional: salvar em arquivo local
-  // fs.appendFileSync('bridge.log', entry + '\n');
+  if (data) console.log('  →', JSON.stringify(data));
 }
 
-// Garantir pasta de downloads existe
 function ensureWatchPath() {
   if (!fs.existsSync(CONFIG.DOWNLOAD_PATH)) {
     log('WARN', `Pasta não existe: ${CONFIG.DOWNLOAD_PATH}`);
-    // Não criamos automaticamente para não monitorar pasta errada
     return false;
   }
   return true;
 }
 
-// Gerar pedido mockado (V1 - sem parser Saipos)
 function generateMockOrder(filePath) {
-  const sectors = ['Frios', 'Saladas', 'Fritadeira', 'Entradas', 'Fogão', 'Sobremesas'];
   const items = [
     { setor: 'Fritadeira', item: 'Batata frita', quantidade: 2 },
     { setor: 'Fritadeira', item: 'Anel de cebola', quantidade: 1 },
@@ -61,14 +54,13 @@ function generateMockOrder(filePath) {
   };
 }
 
-// Enviar pedido para backend
 async function sendOrderToBackend(filePath, mockData) {
   const url = `${CONFIG.BACKEND_URL.replace(/\/$/, '')}/api/orders`;
   
   const payload = {
     sourceFile: path.basename(filePath),
     mockData,
-    bridgeId: uuidv4().slice(0,8),
+    bridgeId: BRIDGE_ID,
     timestamp: moment().toISOString()
   };
   
@@ -82,7 +74,7 @@ async function sendOrderToBackend(filePath, mockData) {
   }
   
   try {
-    log('INFO', `Enviando pedido para ${url}`);
+    log('INFO', `Enviando para ${url}`);
     
     const response = await fetch(url, {
       method: 'POST',
@@ -97,12 +89,11 @@ async function sendOrderToBackend(filePath, mockData) {
     }
     
     const result = await response.json();
-    log('SUCCESS', `Pedido enviado: ${result.order?.mesa || 'OK'}`);
+    log('SUCCESS', `Pedido enviado: ${result.order?.mesa}`);
     return result;
     
   } catch(error) {
-    log('ERROR', `Falha ao enviar pedido: ${error.message}`);
-    // Retry simples (1x)
+    log('ERROR', `Falha ao enviar: ${error.message}`);
     if (!error._retried) {
       error._retried = true;
       await new Promise(r => setTimeout(r, 2000));
@@ -112,10 +103,11 @@ async function sendOrderToBackend(filePath, mockData) {
   }
 }
 
-// Mover arquivo processado
 function moveProcessedFile(filePath) {
   const processedDir = path.join(__dirname, 'processed');
-  if (!fs.existsSync(processedDir)) fs.mkdirSync(processedDir, { recursive: true });
+  if (!fs.existsSync(processedDir)) {
+    fs.mkdirSync(processedDir, { recursive: true });
+  }
   
   const fileName = path.basename(filePath);
   const dest = path.join(processedDir, `${moment().format('YYYYMMDD_HHmmss')}_${fileName}`);
@@ -126,18 +118,16 @@ function moveProcessedFile(filePath) {
     log('INFO', `Arquivo movido: ${fileName}`);
     return true;
   } catch(e) {
-    log('ERROR', `Falha ao mover arquivo: ${e.message}`);
+    log('ERROR', `Falha ao mover: ${e.message}`);
     return false;
   }
 }
 
-// Handler: novo arquivo detectado
 async function handleNewFile(filePath) {
   if (!filePath.toLowerCase().endsWith('.saiposnfeprt')) return;
   
-  log('INFO', `Novo arquivo detectado: ${path.basename(filePath)}`);
+  log('INFO', `Novo arquivo: ${path.basename(filePath)}`);
   
-  // Mostrar notificação no sistema
   if (mainWindow?.webContents) {
     mainWindow.webContents.send('file-detected', {
       fileName: path.basename(filePath),
@@ -146,38 +136,29 @@ async function handleNewFile(filePath) {
   }
   
   try {
-    // Gerar pedido mockado (V1)
     const mockData = generateMockOrder(filePath);
-    
-    // Enviar para backend
     await sendOrderToBackend(filePath, mockData);
-    
-    // Mover arquivo original
     moveProcessedFile(filePath);
     
-    // Feedback visual
     showNotification('Pedido processado!', `📋 ${mockData.mesa} • ${mockData.itens.length} itens`);
     
   } catch(error) {
-    log('ERROR', `Erro ao processar arquivo: ${error.message}`);
+    log('ERROR', `Erro: ${error.message}`);
     showNotification('Erro ao processar', error.message, 'error');
   }
 }
 
-// Notificação do sistema
 function showNotification(title, body, type = 'info') {
   if (Notification.isSupported()) {
-    new Notification(title, { body, icon: path.join(__dirname, 'icon.png') });
+    new Notification({ title, body, icon: path.join(__dirname, 'icon.png') }).show();
   }
   
-  // Também mostra no tray tooltip
   if (tray) {
     tray.setToolTip(`Kitchen Flow: ${title}`);
     setTimeout(() => tray.setToolTip('Kitchen Flow Bridge'), 3000);
   }
 }
 
-// Criar janela principal (oculta por padrão)
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 400,
@@ -198,13 +179,11 @@ function createWindow() {
   
   mainWindow.loadFile('index.html');
   
-  // Esconder ao minimizar (vai para tray)
   mainWindow.on('minimize', (e) => {
     e.preventDefault();
     mainWindow.hide();
   });
   
-  // Fechar vai para tray, não encerra
   mainWindow.on('close', (e) => {
     if (!isQuitting) {
       e.preventDefault();
@@ -214,10 +193,17 @@ function createWindow() {
   });
 }
 
-// Criar tray icon
 function createTray() {
-  const icon = nativeImage.createFromPath(path.join(__dirname, 'icon.png'));
-  tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon.resize({ width: 16, height: 16 }));
+  const iconPath = path.join(__dirname, 'icon.png');
+  let icon = nativeImage.createFromPath(iconPath);
+  
+  if (icon.isEmpty()) {
+    icon = nativeImage.createEmpty();
+  } else {
+    icon = icon.resize({ width: 16, height: 16 });
+  }
+  
+  tray = new Tray(icon);
   
   const contextMenu = Menu.buildFromTemplate([
     {
@@ -228,33 +214,21 @@ function createTray() {
       }
     },
     { type: 'separator' },
-    {
-      label: `Pasta: ${CONFIG.DOWNLOAD_PATH}`,
-      enabled: false
-    },
-    {
-      label: `Backend: ${CONFIG.BACKEND_URL}`,
-      enabled: false
-    },
+    { label: `Pasta: ${CONFIG.DOWNLOAD_PATH}`, enabled: false },
+    { label: `Backend: ${CONFIG.BACKEND_URL}`, enabled: false },
     { type: 'separator' },
-    {
-      label: CONFIG.API_KEY ? '✓ Autenticado' : '⚠ Sem API Key',
-      enabled: false
-    },
+    { label: CONFIG.API_KEY ? '✓ Autenticado' : '⚠ Sem API Key', enabled: false },
+    { label: `Bridge ID: ${BRIDGE_ID}`, enabled: false },
     { type: 'separator' },
     {
       label: 'Sair',
-      click: () => {
-        isQuitting = true;
-        app.quit();
-      }
+      click: () => { isQuitting = true; app.quit(); }
     }
   ]);
   
   tray.setContextMenu(contextMenu);
   tray.setToolTip('Kitchen Flow Bridge');
   
-  // Clique no tray mostra/esconde janela
   tray.on('click', () => {
     if (mainWindow?.isVisible()) {
       mainWindow.hide();
@@ -265,11 +239,10 @@ function createTray() {
   });
 }
 
-// Inicializar watcher
 function startWatcher() {
   if (!ensureWatchPath()) {
-    log('ERROR', 'Não foi possível iniciar o monitoramento');
-    showNotification('Erro de configuração', `Pasta não encontrada: ${CONFIG.DOWNLOAD_PATH}`, 'error');
+    log('ERROR', 'Não foi possível iniciar monitoramento');
+    showNotification('Erro', `Pasta não encontrada: ${CONFIG.DOWNLOAD_PATH}`, 'error');
     return;
   }
   
@@ -277,35 +250,30 @@ function startWatcher() {
   log('INFO', `Monitorando: ${CONFIG.DOWNLOAD_PATH}`);
 }
 
-// IPC handlers para janela
-ipcMain.handle('get-config', () => CONFIG);
+ipcMain.handle('get-config', () => ({ ...CONFIG, bridgeId: BRIDGE_ID }));
 ipcMain.handle('get-status', () => ({
   watching: watcher?.isActive || false,
   backend: CONFIG.BACKEND_URL,
-  uptime: process.uptime()
+  uptime: process.uptime(),
+  bridgeId: BRIDGE_ID
 }));
-ipcMain.handle('trigger-test', () => {
-  return watcher?.triggerTest?.();
-});
+ipcMain.handle('trigger-test', () => watcher?.triggerTest?.());
 
-// App lifecycle
 app.whenReady().then(async () => {
   log('INFO', 'Kitchen Flow Bridge iniciando...');
   log('INFO', `Backend: ${CONFIG.BACKEND_URL}`);
-  log('INFO', `Monitor: ${CONFIG.DOWNLOAD_PATH}`);
+  log('INFO', `Bridge ID: ${BRIDGE_ID}`);
   
   createTray();
   createWindow();
   startWatcher();
   
-  // Mostrar notificação de início
   showNotification('Kitchen Flow Bridge', 'Monitoramento ativo');
 });
 
 app.on('window-all-closed', () => {
-  // Manter app rodando no tray mesmo sem janela
   if (process.platform !== 'darwin') {
-    // Não fechar
+    // Manter rodando no tray
   }
 });
 
@@ -315,9 +283,4 @@ app.on('before-quit', () => {
   log('INFO', 'Encerrando...');
 });
 
-// Handler para argumentos de linha de comando
-if (process.argv.includes('--show')) {
-  app.whenReady().then(() => mainWindow?.show());
-}
-
-module.exports = { CONFIG, handleNewFile };
+module.exports = { CONFIG, BRIDGE_ID, handleNewFile };

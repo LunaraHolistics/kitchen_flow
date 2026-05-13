@@ -1,32 +1,33 @@
 /**
  * Kitchen Flow Monitor - Frontend Tablet
- * Conecta ao backend via WebSocket + HTTP
+ * Backend: https://kitchen-flow-swq2.onrender.com
  */
 (() => {
-  // Configuração: usa variável do Vercel ou localStorage
+  // URL do backend - prioridade: env > localStorage > default
   const getBackendUrl = () => {
     const saved = localStorage.getItem('kfm_backend_url');
     if (saved) return saved;
-    // Vercel env vars são injetadas no build
-    if (typeof VITE_BACKEND_URL !== 'undefined') return VITE_BACKEND_URL;
-    return `ws://${window.location.hostname}:4545`; // fallback dev
+    if (typeof process !== 'undefined' && process.env?.VITE_BACKEND_URL) {
+      return process.env.VITE_BACKEND_URL;
+    }
+    return 'https://kitchen-flow-swq2.onrender.com';
   };
 
-  const WS_URL = getBackendUrl().replace('http', 'ws').replace('https', 'wss');
-  const API_URL = getBackendUrl().replace('ws', 'http').replace('wss', 'https');
+  const BACKEND_URL = getBackendUrl();
+  const WS_URL = BACKEND_URL.replace('http', 'ws').replace('https', 'wss');
   
+  console.log('🔌 Backend:', BACKEND_URL);
+  console.log('🔌 WebSocket:', WS_URL);
+
   const SECTORS = ['Frios', 'Saladas', 'Fritadeira', 'Entradas', 'Fogão', 'Sobremesas'];
   
-  // Estado
   let ws, clientId, orders = [], currentTab = 'geral';
   let reconnectAttempts = 0;
   const MAX_RECONNECT = 10;
   
-  // DOM Helpers
   const $ = s => document.querySelector(s);
   const $$ = s => document.querySelectorAll(s);
   
-  // Elements
   const ordersGeral = $('#ordersGeral');
   const sectorsWrap = $('#sectors');
   const completedList = $('#completed');
@@ -74,7 +75,7 @@
   
   // WebSocket connection with retry
   function connect() {
-    console.log(`🔌 Conectando a ${WS_URL}`);
+    console.log(`🔌 Conectando WebSocket: ${WS_URL}`);
     
     try {
       ws = new WebSocket(WS_URL);
@@ -89,9 +90,7 @@
       console.log('✅ WebSocket conectado');
       updateConnectionStatus(true);
       reconnectAttempts = 0;
-      toast('Conectado ao servidor', 'success');
-      // Request full sync
-      ws.send(JSON.stringify({ type: 'REQUEST_FULL_SYNC' }));
+      toast('🟢 Conectado ao servidor');
     };
     
     ws.onclose = () => {
@@ -108,7 +107,7 @@
     
     ws.onmessage = (e) => {
       try {
-        const { type, timestamp, ...data } = JSON.parse(e.data);
+        const { type, ...data } = JSON.parse(e.data);
         handleServerMessage(type, data);
       } catch(err) {
         console.error('Message parse error:', err);
@@ -143,12 +142,11 @@
     }, delay);
   }
   
-  // Handle server messages
   function handleServerMessage(type, data) {
     switch(type) {
       case 'INIT':
         orders = data.orders || [];
-        clientId = data.clientId || clientId;
+        clientId = data.clientId;
         if (clientId) clientEl.textContent = `📱 ${clientId}`;
         renderAll();
         break;
@@ -162,7 +160,7 @@
         if (!orders.find(o => o.id === data.order.id)) {
           orders.unshift(data.order);
           renderAll();
-          toast(`🔔 Novo pedido: ${data.order.mesa}`);
+          toast(`🔔 Novo: ${data.order.mesa}`);
           playSound();
         }
         break;
@@ -178,10 +176,6 @@
       case 'ORDER_DELETED':
         orders = orders.filter(o => o.id !== data.orderId);
         renderAll();
-        break;
-        
-      case 'PONG':
-        // Health check response
         break;
     }
   }
@@ -209,18 +203,16 @@
       osc.stop(ctx.currentTime + 0.25);
       
       setTimeout(() => ctx.close(), 300);
-    } catch(e) {
-      // Ignore audio errors
-    }
+    } catch(e) {}
   }
   
   // Send message to server
   function send(type, payload = {}) {
     if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type, payload, timestamp: new Date().toISOString() }));
+      ws.send(JSON.stringify({ type, payload }));
       return true;
     }
-    toast('Sem conexão com o servidor', 'error');
+    toast('Sem conexão', 'error');
     return false;
   }
   
@@ -234,7 +226,7 @@
         <div class="empty">
           <span class="empty-icon">🍽️</span>
           <p>Nenhum pedido ativo</p>
-          <small>Aguardando pedidos do Saipos...</small>
+          <small>Aguardando pedidos...</small>
         </div>
       `;
       return;
@@ -242,10 +234,9 @@
     
     ordersGeral.innerHTML = ativos.map(order => {
       const isDelivery = order.tipo === 'delivery';
-      const priorityStyle = isDelivery ? '' : `style="border-left-color:#e74c3c"`;
       
       return `
-        <div class="order-card ${isDelivery ? 'delivery' : ''}" ${priorityStyle} data-id="${order.id}">
+        <div class="order-card ${isDelivery ? 'delivery' : ''}">
           <div class="order-header">
             <div>
               <div class="order-mesa">${escapeHtml(order.mesa)}</div>
@@ -280,8 +271,6 @@
   // Render: SETOR tab
   function renderSetor() {
     const ativos = orders.filter(o => o.status !== 'concluido');
-    
-    // Agrupar itens por setor
     const bySector = {};
     SECTORS.forEach(s => bySector[s] = {});
     
@@ -300,7 +289,6 @@
       });
     });
     
-    // Count active items for badge
     let totalAtivos = 0;
     
     sectorsWrap.innerHTML = SECTORS.map(sector => {
@@ -336,7 +324,7 @@
           </div>
           <div class="sector-actions">
             <button class="btn-sector start" onclick="window.startSector('${sector}')">
-              ▶ Iniciar ${sector}
+              ▶ Iniciar
             </button>
             <button class="btn-sector done" onclick="window.doneSector('${sector}')">
               ✅ Concluir
@@ -405,7 +393,7 @@
   const backendUrlInput = $('#backendUrl');
   
   $('#openConfig').onclick = () => {
-    backendUrlInput.value = getBackendUrl();
+    backendUrlInput.value = BACKEND_URL;
     configPanel.classList.remove('hidden');
   };
   
@@ -422,11 +410,11 @@
     }
   };
   
-  // Global actions (exposed for HTML onclick)
+  // Global actions
   window.startOrder = (id) => {
     const order = orders.find(o => o.id === id);
     if (!order) return;
-    confirm(`Iniciar produção do pedido ${order.mesa}?`, () => {
+    confirm(`Iniciar ${order.mesa}?`, () => {
       if (send('UPDATE_STATUS', { orderId: id, status: 'em-preparo' })) {
         toast('Produção iniciada');
       }
@@ -434,7 +422,7 @@
   };
   
   window.markReady = (id) => {
-    confirm(`Marcar pedido como PRONTO?`, () => {
+    confirm(`Marcar como PRONTO?`, () => {
       if (send('UPDATE_STATUS', { orderId: id, status: 'pronto' })) {
         toast('Pedido pronto!');
       }
@@ -446,16 +434,12 @@
       o.status !== 'concluido' && o.itens.some(i => i.setor === sector)
     );
     if (ativos.length === 0) {
-      toast(`Nenhum item para iniciar em ${sector}`);
+      toast(`Nada para iniciar em ${sector}`);
       return;
     }
-    confirm(`Iniciar TODOS os itens de ${sector}? (${ativos.length} pedidos)`, () => {
+    confirm(`Iniciar ${sector}? (${ativos.length} pedidos)`, () => {
       ativos.forEach(o => {
-        send('UPDATE_STATUS', { 
-          orderId: o.id, 
-          status: 'em-preparo', 
-          sector 
-        });
+        send('UPDATE_STATUS', { orderId: o.id, status: 'em-preparo', sector });
       });
       toast(`${sector} iniciado!`);
     });
@@ -466,12 +450,11 @@
       o.status === 'em-preparo' && o.itens.some(i => i.setor === sector)
     );
     if (emPreparo.length === 0) {
-      toast(`Nenhum item em preparo em ${sector}`);
+      toast(`Nada em preparo em ${sector}`);
       return;
     }
-    confirm(`Concluir itens de ${sector}?`, () => {
+    confirm(`Concluir ${sector}?`, () => {
       emPreparo.forEach(o => {
-        // Check if all sectors of this order are done
         const allDone = o.itens.every(it => 
           (o.sectorStatus?.[it.setor] || o.status) === 'pronto'
         );
@@ -486,7 +469,7 @@
   };
   
   window.removeCompleted = (id) => {
-    confirm('Remover este pedido concluído da lista?', () => {
+    confirm('Remover este pedido?', () => {
       if (send('DELETE_ORDER', { orderId: id })) {
         toast('Removido');
       }
@@ -496,13 +479,13 @@
   $('#clearCompleted').onclick = () => {
     const concluidos = orders.filter(o => o.status === 'concluido');
     if (!concluidos.length) return;
-    confirm(`Limpar TODOS os ${concluidos.length} pedidos concluídos?`, () => {
+    confirm(`Limpar ${concluidos.length} concluídos?`, () => {
       concluidos.forEach(o => send('DELETE_ORDER', { orderId: o.id }));
       toast('Lista limpa');
     });
   };
   
-  // Utility: escape HTML to prevent XSS
+  // Utility: escape HTML
   function escapeHtml(str) {
     if (!str) return '';
     const div = document.createElement('div');
@@ -510,14 +493,7 @@
     return div.innerHTML;
   }
   
-  // Handle visibility change (pause audio when tab inactive)
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) {
-      // Could pause sounds here if needed
-    }
-  });
-  
-  // Prevent accidental zoom on double-tap
+  // Prevent accidental zoom
   let lastTouchEnd = 0;
   document.addEventListener('touchend', (e) => {
     const now = Date.now();
@@ -531,6 +507,4 @@
   
   // Expose for debugging
   window.KFM = { orders, ws, send, renderAll };
-  
-  console.log('🍳 Kitchen Flow Frontend loaded');
 })();
