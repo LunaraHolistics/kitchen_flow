@@ -1,0 +1,300 @@
+{
+  "meta": {
+    "version": "1.0",
+    "restaurante": "Na Fazenda Restaurante e Eventos",
+    "ultima_atualizacao": "2026-05-13"
+  },
+  "setores": {
+    "Fogão": "Pratos quentes, grelhados, molhos, arroz, feijão",
+    "Fritadeira": "Itens empanados, frituras, batata, mandioca",
+    "Saladas": "Saladas frescas, vinagrete, folhas, tomate",
+    "Frios": "Acompanhamentos frios, farofa, molhos, pães, queijos",
+    "Sobremesas": "Sobremesas e finalizações"
+  },
+  "pratos": {
+    "macarrão a bolonhesa": {
+      "nome_tablet": "Macarrão à Bolonhesa",
+      "categoria": "individual",
+      "composicao": [
+        { "item": "Macarrão ao Molho Bolonhesa", "setor": "Fogão", "quantidade": 1 },
+        { "item": "Queijo Ralado", "setor": "Frios", "quantidade": 1 }
+      ]
+    },
+    "prato kids isca de filé de frango empanado": {
+      "nome_tablet": "Kids: Isca de Frango Empanado",
+      "categoria": "kids",
+      "composicao": [
+        { "item": "Iscas de Filé de Frango Empanado", "setor": "Fritadeira", "quantidade": 1 },
+        { "item": "Arroz Branco", "setor": "Fogão", "quantidade": 1 },
+        { "item": "Feijão", "setor": "Fogão", "quantidade": 1 },
+        { "item": "Batata Frita", "setor": "Fritadeira", "quantidade": 1 }
+      ]
+    },
+    "prato kids mignon": {
+      "nome_tablet": "Kids: Filé Mignon",
+      "categoria": "kids",
+      "composicao": [
+        { "item": "Bife de Filé Mignon", "setor": "Fogão", "quantidade": 1 },
+        { "item": "Arroz Branco", "setor": "Fogão", "quantidade": 1 },
+        { "item": "Feijão", "setor": "Fogão", "quantidade": 1 },
+        { "item": "Batata Frita", "setor": "Fritadeira", "quantidade": 1 }
+      ]
+    },
+    "tirinhas de frango": {
+      "nome_tablet": "Tirinhas de Frango",
+      "categoria": "entrada",
+      "composicao": [
+        { "item": "Frango Empanado e Douradinho", "setor": "Fritadeira", "quantidade": 1 },
+        { "item": "Molho para Acompanhamento", "setor": "Frios", "quantidade": 1 }
+      ]
+    },
+    "cubos de queijo coalho frito": {
+      "nome_tablet": "Queijo Coalho Frito",
+      "categoria": "entrada",
+      "composicao": [
+        { "item": "Cubos de Queijo Coalho Frito", "setor": "Fritadeira", "quantidade": 1 },
+        { "item": "Molho para Acompanhamento", "setor": "Frios", "quantidade": 1 }
+      ]
+    },
+    "mandioca frita": {
+      "nome_tablet": "Mandioca Frita",
+      "categoria": "entrada",
+      "composicao": [
+        { "item": "Mandioca Frita", "setor": "Fritadeira", "quantidade": 1 }
+      ]
+    },
+    "bolinho de costela recheado com queijo": {
+      "nome_tablet": "Bolinho de Costela (8un)",
+      "categoria": "entrada",
+      "composicao": [
+        { "item": "Bolinho de Costela Recheado", "setor": "Fritadeira", "quantidade": 1 },
+        { "item": "Molho para Acompanhamento", "setor": "Frios", "quantidade": 1 }
+      ]
+    },
+    "porção camarão empanado": {
+      "nome_tablet": "Camarão Empanado",
+      "categoria": "entrada",
+      "composicao": [
+        { "item": "Camarão Empanado", "setor": "Fritadeira", "quantidade": 1 }
+      ]
+    },
+    "porção iscas de tilápia": {
+      "nome_tablet": "Iscas de Tilápia",
+      "categoria": "entrada",
+      "composicao": [
+        { "item": "Iscas de Tilápia Empanadas", "setor": "Fritadeira", "quantidade": 1 }
+      ]
+    },
+    "coraçãozinho da fazenda": {
+      "nome_tablet": "Coraçãozinho da Fazenda",
+      "categoria": "entrada",
+      "composicao": [
+        { "item": "Porção de Coração Grelhado", "setor": "Fogão", "quantidade": 1 },
+        { "item": "Pão da Casa", "setor": "Frios", "quantidade": 1 },
+        { "item": "Farofa", "setor": "Frios", "quantidade": 1 },
+        { "item": "Molho de Pimenta", "setor": "Frios", "quantidade": 1 }
+      ]
+    },
+    "mini pastel de costela": {
+      "nome_tablet": "Mini Pastel de Costela (6un)",
+      "categoria": "entrada",
+      "composicao": [
+        { "item": "Mini Pastel de Costela", "setor": "Fritadeira", "quantidade": 1 }
+      ]
+    },
+    "bolinho de cupim": {
+      "nome_tablet": "Bolinho de Cupim",
+      "categoria": "entrada",
+      "composicao": [
+        { "item": "Bolinho de Cupim", "setor": "Fritadeira", "quantidade": 1 }
+      ]
+    },
+    "lollypop da fazenda": {
+      "nome_tablet": "Lollypop da Fazenda (10un)",
+      "categoria": "entrada",
+      "composicao": [
+        { "item": "Lollypop de Carne", "setor": "Fritadeira", "quantidade": 1 }
+      ]
+    },
+    "choripán da roça": {
+      "nome_tablet": "Choripán da Roça",
+      "categoria": "entrada",
+      "composicao": [
+        { "item": "Linguiça Suína Grelhada", "setor": "Fogão", "quantidade": 1 },
+        { "item": "Pão da Casa", "setor": "Frios", "quantidade": 1 },
+        { "item": "Queijo", "setor": "Frios", "quantidade": 1 },
+        { "item": "Chimichurri", "setor": "Frios", "quantidade": 1 }
+      ]
+    },
+    "linguiça 100% suína acebolada": {
+      "nome_tablet": "Linguiça Suína Acebolada",
+      "categoria": "entrada",
+      "composicao": [
+        { "item": "Linguiça Suína Acebolada", "setor": "Fogão", "quantidade": 1 },
+        { "item": "Pão da Casa", "setor": "Frios", "quantidade": 1 },
+        { "item": "Molho para Acompanhamento", "setor": "Frios", "quantidade": 1 }
+      ]
+    },
+    "pancetta de rolo": {
+      "nome_tablet": "Pancetta de Rolo",
+      "categoria": "entrada",
+      "composicao": [
+        { "item": "Pancetta de Rolo (3 pedaços)", "setor": "Fritadeira", "quantidade": 1 },
+        { "item": "Molho para Acompanhamento", "setor": "Frios", "quantidade": 1 }
+      ]
+    },
+    "batata frita": {
+      "nome_tablet": "Batata Frita",
+      "categoria": "acompanhamento",
+      "composicao": [
+        { "item": "Batata Frita", "setor": "Fritadeira", "quantidade": 1 }
+      ]
+    },
+    "batata frita com requeijão scala e bacon": {
+      "nome_tablet": "Batata Frita com Requeijão e Bacon",
+      "categoria": "acompanhamento",
+      "composicao": [
+        { "item": "Batata Frita com Requeijão Scala e Bacon", "setor": "Fritadeira", "quantidade": 1 }
+      ]
+    },
+    "abóbora recheada da fazenda": {
+      "nome_tablet": "Abóbora Recheada (serve 3)",
+      "categoria": "compartilhar",
+      "composicao": [
+        { "item": "Abóbora Cabotiá Recheada (Carne Seca + Requeijão)", "setor": "Fogão", "quantidade": 1 },
+        { "item": "Arroz Branco", "setor": "Fogão", "quantidade": 1 },
+        { "item": "Farofa Artesanal", "setor": "Frios", "quantidade": 1 },
+        { "item": "Salada Fresca de Rúcula com Tomate Cereja", "setor": "Saladas", "quantidade": 1 }
+      ]
+    },
+    "arroz caldoso de fraldinha": {
+      "nome_tablet": "Arroz Caldoso de Fraldinha (2 pessoas)",
+      "categoria": "compartilhar",
+      "composicao": [
+        { "item": "Arroz Caldoso de Fraldinha", "setor": "Fogão", "quantidade": 1 }
+      ]
+    },
+    "arroz carreteiro": {
+      "nome_tablet": "Arroz Carreteiro (2 pessoas)",
+      "categoria": "compartilhar",
+      "composicao": [
+        { "item": "Arroz Carreteiro", "setor": "Fogão", "quantidade": 1 }
+      ]
+    },
+    "bobó de camarão": {
+      "nome_tablet": "Bobó de Camarão (até 2 pessoas)",
+      "categoria": "compartilhar",
+      "composicao": [
+        { "item": "Bobó de Camarão", "setor": "Fogão", "quantidade": 1 },
+        { "item": "Arroz Branco", "setor": "Fogão", "quantidade": 1 },
+        { "item": "Farofa", "setor": "Frios", "quantidade": 1 }
+      ]
+    },
+    "bombom de costela": {
+      "nome_tablet": "BomBom de Costela (até 3 pessoas)",
+      "categoria": "compartilhar",
+      "composicao": [
+        { "item": "Costela ao Molho", "setor": "Fogão", "quantidade": 1 },
+        { "item": "Arroz Branco", "setor": "Fogão", "quantidade": 1 },
+        { "item": "Mandioca Frita", "setor": "Fritadeira", "quantidade": 1 },
+        { "item": "Vinagrete", "setor": "Saladas", "quantidade": 1 }
+      ]
+    },
+    "filé mignon ao molho de catupiry": {
+      "nome_tablet": "Filé Mignon Catupiry (2 pessoas)",
+      "categoria": "compartilhar",
+      "composicao": [
+        { "item": "Filé Mignon ao Molho de Catupiry", "setor": "Fogão", "quantidade": 1 },
+        { "item": "Arroz Branco", "setor": "Fogão", "quantidade": 1 },
+        { "item": "Batata Frita", "setor": "Fritadeira", "quantidade": 1 }
+      ]
+    },
+    "filé mignon ao molho de gorgonzola": {
+      "nome_tablet": "Filé Mignon Gorgonzola (2 pessoas)",
+      "categoria": "compartilhar",
+      "composicao": [
+        { "item": "Filé Mignon ao Molho de Gorgonzola", "setor": "Fogão", "quantidade": 1 },
+        { "item": "Arroz Branco", "setor": "Fogão", "quantidade": 1 },
+        { "item": "Batata Frita", "setor": "Fritadeira", "quantidade": 1 }
+      ]
+    },
+    "galinhada da fazenda": {
+      "nome_tablet": "Galinhada da Fazenda (500g)",
+      "categoria": "compartilhar",
+      "composicao": [
+        { "item": "Galinhada da Fazenda", "setor": "Fogão", "quantidade": 1 }
+      ]
+    },
+    "moqueca de peixe da fazenda": {
+      "nome_tablet": "Moqueca de Peixe (até 2 pessoas)",
+      "categoria": "compartilhar",
+      "composicao": [
+        { "item": "Moqueca de Peixe da Fazenda", "setor": "Fogão", "quantidade": 1 }
+      ]
+    },
+    "parmegiana de file mignon": {
+      "nome_tablet": "Parmegiana de Filé Mignon (2 pessoas)",
+      "categoria": "compartilhar",
+      "composicao": [
+        { "item": "Filé Mignon à Parmegiana", "setor": "Fogão", "quantidade": 1 },
+        { "item": "Arroz Branco", "setor": "Fogão", "quantidade": 1 },
+        { "item": "Batata Frita", "setor": "Fritadeira", "quantidade": 1 }
+      ]
+    },
+    "tilápia ao molho da casa": {
+      "nome_tablet": "Tilápia ao Molho da Casa (serve 2)",
+      "categoria": "compartilhar",
+      "composicao": [
+        { "item": "Tilápia ao Molho Especial", "setor": "Fogão", "quantidade": 1 },
+        { "item": "Arroz de Brócolis", "setor": "Fogão", "quantidade": 1 }
+      ]
+    },
+    "2 panquecas caramelizadas com doce de leite": {
+      "nome_tablet": "Panquecas Caramelizadas",
+      "categoria": "sobremesa",
+      "composicao": [
+        { "item": "Panquecas Caramelizadas com Doce de Leite", "setor": "Sobremesas", "quantidade": 1 }
+      ]
+    },
+    "petit gateau com sorvete de creme": {
+      "nome_tablet": "Petit Gâteau com Sorvete",
+      "categoria": "sobremesa",
+      "composicao": [
+        { "item": "Petit Gâteau com Sorvete de Creme", "setor": "Sobremesas", "quantidade": 1 }
+      ]
+    },
+    "salada de frutas na taça com creme de maracujá": {
+      "nome_tablet": "Salada de Frutas com Creme",
+      "categoria": "sobremesa",
+      "composicao": [
+        { "item": "Salada de Frutas na Taça com Creme de Maracujá", "setor": "Sobremesas", "quantidade": 1 }
+      ]
+    }
+  },
+  "acompanhamentos_avulsos": {
+    "arroz biro biro": { "item": "Arroz Biro Biro", "setor": "Fogão" },
+    "arroz branco": { "item": "Arroz Branco", "setor": "Fogão" },
+    "batata frita individual": { "item": "Batata Frita", "setor": "Fritadeira" },
+    "molho chimichurri": { "item": "Molho Chimichurri", "setor": "Frios" },
+    "cumbuca de feijão": { "item": "Feijão", "setor": "Fogão" },
+    "farofa de banana": { "item": "Farofa de Banana", "setor": "Frios" },
+    "escabeche de berinjela": { "item": "Escabeche de Berinjela", "setor": "Frios" },
+    "farofa de carne seca": { "item": "Farofa de Carne Seca", "setor": "Frios" },
+    "farofa de rúcula": { "item": "Farofa de Rúcula", "setor": "Frios" },
+    "guacamole": { "item": "Guacamole", "setor": "Frios" },
+    "mandioca frita individual": { "item": "Mandioca Frita", "setor": "Fritadeira" },
+    "molho abacaxi com pimenta": { "item": "Molho Abacaxi com Pimenta", "setor": "Frios" },
+    "molho de pimenta": { "item": "Molho de Pimenta", "setor": "Frios" },
+    "molho goiabada com pimenta": { "item": "Molho Goiabada com Pimenta", "setor": "Frios" },
+    "tomate recheado com catupiry": { "item": "Tomate Recheado com Catupiry", "setor": "Frios" },
+    "vinagrete de manga": { "item": "Vinagrete de Manga", "setor": "Saladas" }
+  },
+  "acompanhamentos_fixos_por_categoria": {
+    "compartilhar": [
+      { "item": "Pão da Casa", "setor": "Frios", "quantidade": 1 }
+    ],
+    "kids": [
+      { "item": "Talher Infantil", "setor": "Frios", "quantidade": 1 }
+    ]
+  }
+}

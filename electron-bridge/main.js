@@ -5,7 +5,9 @@ const { v4: uuidv4 } = require('uuid');
 const moment = require('moment');
 const Watcher = require('./watcher');
 
-// Config
+// ============================================================================
+// CONFIGURAÇÕES
+// ============================================================================
 const CONFIG = {
   DOWNLOAD_PATH: process.env.KFM_DOWNLOAD_PATH || 'C:\\downloads',
   BACKEND_URL: process.env.KFM_BACKEND_URL || 'http://localhost:4545',
@@ -13,16 +15,56 @@ const CONFIG = {
   AUTO_START: process.env.KFM_AUTO_START !== 'false'
 };
 
+// ============================================================================
+// CARREGAR DICIONÁRIO DO CARDÁPIO (menu-map.json)
+// ============================================================================
+const MENU_MAP_PATH = path.join(__dirname, 'menu-map.json');
+let menuMap = { 
+  pratos: {}, 
+  acompanhamentos_avulsos: {}, 
+  acompanhamentos_fixos_por_categoria: {},
+  setores: {}
+};
+
+function loadMenuMap() {
+  try {
+    if (fs.existsSync(MENU_MAP_PATH)) {
+      menuMap = JSON.parse(fs.readFileSync(MENU_MAP_PATH, 'utf8'));
+      const totalPratos = Object.keys(menuMap.pratos || {}).length;
+      console.log(`📖 Cardápio carregado: ${totalPratos} pratos mapeados`);
+      return true;
+    } else {
+      console.warn('⚠️ menu-map.json não encontrado em:', MENU_MAP_PATH);
+      return false;
+    }
+  } catch(e) {
+    console.error('❌ Erro ao carregar menu-map.json:', e.message);
+    return false;
+  }
+}
+
+// Carregar ao iniciar
+const menuLoaded = loadMenuMap();
+
+// ============================================================================
+// VARIÁVEIS GLOBAIS
+// ============================================================================
 let mainWindow, tray, watcher;
 let isQuitting = false;
 const BRIDGE_ID = uuidv4().slice(0, 8);
 
+// ============================================================================
+// LOGGER
+// ============================================================================
 function log(level, msg, data = null) {
   const entry = `[${moment().format('HH:mm:ss')}] [${level}] ${msg}`;
   console.log(entry);
   if (data) console.log('  →', JSON.stringify(data));
 }
 
+// ============================================================================
+// VALIDAR PASTA DE DOWNLOADS
+// ============================================================================
 function ensureWatchPath() {
   if (!fs.existsSync(CONFIG.DOWNLOAD_PATH)) {
     log('WARN', `Pasta não existe: ${CONFIG.DOWNLOAD_PATH}`);
@@ -31,29 +73,81 @@ function ensureWatchPath() {
   return true;
 }
 
+// ============================================================================
+// GERADOR DE PEDIDOS COM CARDÁPIO REAL (V1.5)
+// ============================================================================
 function generateMockOrder(filePath) {
+  const pratosChaves = Object.keys(menuMap.pratos || {});
+  
+  // Fallback se não houver cardápio carregado
+  if (pratosChaves.length === 0) {
+    log('WARN', 'Usando fallback aleatório (cardápio não carregado)');
+    return generateRandomFallback();
+  }
+
+  // Escolhe um prato aleatório do cardápio real (simulando leitura do arquivo)
+  const pratoChave = pratosChaves[Math.floor(Math.random() * pratosChaves.length)];
+  const prato = menuMap.pratos[pratoChave];
+  
+  if (!prato || !prato.composicao) {
+    log('ERROR', `Prato "${pratoChave}" sem composição válida`);
+    return generateRandomFallback();
+  }
+  
+  // Monta a composição base do prato
+  let itens = [...prato.composicao];
+  
+  // Adiciona acompanhamentos fixos por categoria (ex: pão para pratos "compartilhar")
+  const categoria = prato.categoria;
+  if (categoria && menuMap.acompanhamentos_fixos_por_categoria?.[categoria]) {
+    itens = [...itens, ...menuMap.acompanhamentos_fixos_por_categoria[categoria]];
+  }
+
+  // Define se é delivery ou salão (20% de chance de delivery)
+  const isDelivery = Math.random() < 0.2;
+  
+  return {
+    mesa: isDelivery 
+      ? `Delivery #${Math.floor(Math.random() * 500) + 1}` 
+      : `Mesa ${Math.floor(Math.random() * 20) + 1}`,
+    tipo: isDelivery ? 'delivery' : 'salao',
+    pratoOriginal: prato.nome_tablet, // Para debug/futuro parser
+    categoria: categoria,
+    itens: itens.map(i => ({
+      uuid: uuidv4(),
+      setor: i.setor || 'Fogão',
+      item: i.item || 'Item',
+      quantidade: parseInt(i.quantidade) || 1
+    }))
+  };
+}
+
+// Fallback antigo (mantido por segurança)
+function generateRandomFallback() {
   const items = [
     { setor: 'Fritadeira', item: 'Batata frita', quantidade: 2 },
-    { setor: 'Fritadeira', item: 'Anel de cebola', quantidade: 1 },
     { setor: 'Fogão', item: 'Picanha', quantidade: 1 },
-    { setor: 'Fogão', item: 'Frango grelhado', quantidade: 2 },
-    { setor: 'Saladas', item: 'Salada verde', quantidade: 1 },
-    { setor: 'Frios', item: 'Tábua de frios', quantidade: 1 },
-    { setor: 'Entradas', item: 'Bruschetta', quantidade: 2 },
-    { setor: 'Sobremesas', item: 'Petit gâteau', quantidade: 1 }
+    { setor: 'Saladas', item: 'Salada verde', quantidade: 1 }
   ];
   
   const isDelivery = Math.random() < 0.2;
-  const numItems = Math.floor(Math.random() * 4) + 2;
+  const numItems = Math.floor(Math.random() * 3) + 2;
   const shuffled = items.sort(() => 0.5 - Math.random());
   
   return {
     mesa: isDelivery ? `Delivery #${Math.floor(Math.random()*500)+1}` : `Mesa ${Math.floor(Math.random()*20)+1}`,
     tipo: isDelivery ? 'delivery' : 'salao',
-    itens: shuffled.slice(0, numItems).map(i => ({ ...i }))
+    pratoOriginal: 'Pedido Aleatório',
+    itens: shuffled.slice(0, numItems).map(i => ({
+      uuid: uuidv4(),
+      ...i
+    }))
   };
 }
 
+// ============================================================================
+// ENVIO DE PEDIDO PARA BACKEND
+// ============================================================================
 async function sendOrderToBackend(filePath, mockData) {
   const url = `${CONFIG.BACKEND_URL.replace(/\/$/, '')}/api/orders`;
   
@@ -103,6 +197,9 @@ async function sendOrderToBackend(filePath, mockData) {
   }
 }
 
+// ============================================================================
+// MOVER ARQUIVO PROCESSADO
+// ============================================================================
 function moveProcessedFile(filePath) {
   const processedDir = path.join(__dirname, 'processed');
   if (!fs.existsSync(processedDir)) {
@@ -123,11 +220,15 @@ function moveProcessedFile(filePath) {
   }
 }
 
+// ============================================================================
+// HANDLER: NOVO ARQUIVO DETECTADO
+// ============================================================================
 async function handleNewFile(filePath) {
   if (!filePath.toLowerCase().endsWith('.saiposnfeprt')) return;
   
   log('INFO', `Novo arquivo: ${path.basename(filePath)}`);
   
+  // Notificar janela (se aberta)
   if (mainWindow?.webContents) {
     mainWindow.webContents.send('file-detected', {
       fileName: path.basename(filePath),
@@ -136,33 +237,58 @@ async function handleNewFile(filePath) {
   }
   
   try {
+    // Gerar pedido com cardápio real
     const mockData = generateMockOrder(filePath);
+    
+    // Enviar para backend
     await sendOrderToBackend(filePath, mockData);
+    
+    // Mover arquivo original
     moveProcessedFile(filePath);
     
-    showNotification('Pedido processado!', `📋 ${mockData.mesa} • ${mockData.itens.length} itens`);
+    // Notificação visual
+    showNotification(
+      'Pedido processado!', 
+      `📋 ${mockData.mesa} • ${mockData.pratoOriginal || mockData.itens.length} itens`
+    );
     
   } catch(error) {
-    log('ERROR', `Erro: ${error.message}`);
+    log('ERROR', `Erro ao processar arquivo: ${error.message}`);
     showNotification('Erro ao processar', error.message, 'error');
   }
 }
 
+// ============================================================================
+// NOTIFICAÇÕES DO SISTEMA
+// ============================================================================
 function showNotification(title, body, type = 'info') {
-  if (Notification.isSupported()) {
-    new Notification({ title, body, icon: path.join(__dirname, 'icon.png') }).show();
+  try {
+    if (Notification.isSupported()) {
+      new Notification({ 
+        title, 
+        body, 
+        icon: path.join(__dirname, 'icon.png'),
+        silent: false
+      }).show();
+    }
+  } catch(e) {
+    log('WARN', `Notificação falhou: ${e.message}`);
   }
   
+  // Atualizar tooltip do tray
   if (tray) {
     tray.setToolTip(`Kitchen Flow: ${title}`);
     setTimeout(() => tray.setToolTip('Kitchen Flow Bridge'), 3000);
   }
 }
 
+// ============================================================================
+// CRIAR JANELA PRINCIPAL
+// ============================================================================
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 400,
-    height: 300,
+    height: 320,
     show: process.argv.includes('--dev'),
     webPreferences: {
       nodeIntegration: false,
@@ -174,16 +300,19 @@ function createWindow() {
     skipTaskbar: true,
     minimizable: false,
     maximizable: false,
-    resizable: false
+    resizable: false,
+    alwaysOnTop: false
   });
   
   mainWindow.loadFile('index.html');
   
+  // Esconder ao minimizar (vai para tray)
   mainWindow.on('minimize', (e) => {
     e.preventDefault();
     mainWindow.hide();
   });
   
+  // Fechar vai para tray, não encerra o app
   mainWindow.on('close', (e) => {
     if (!isQuitting) {
       e.preventDefault();
@@ -193,6 +322,9 @@ function createWindow() {
   });
 }
 
+// ============================================================================
+// CRIAR ÍCONE NA BANDEJA (TRAY)
+// ============================================================================
 function createTray() {
   const iconPath = path.join(__dirname, 'icon.png');
   let icon = nativeImage.createFromPath(iconPath);
@@ -207,28 +339,48 @@ function createTray() {
   
   const contextMenu = Menu.buildFromTemplate([
     {
-      label: 'Mostrar',
+      label: '👁️ Mostrar Painel',
       click: () => {
         mainWindow?.show();
         mainWindow?.focus();
       }
     },
     { type: 'separator' },
-    { label: `Pasta: ${CONFIG.DOWNLOAD_PATH}`, enabled: false },
-    { label: `Backend: ${CONFIG.BACKEND_URL}`, enabled: false },
-    { type: 'separator' },
-    { label: CONFIG.API_KEY ? '✓ Autenticado' : '⚠ Sem API Key', enabled: false },
-    { label: `Bridge ID: ${BRIDGE_ID}`, enabled: false },
+    {
+      label: `📁 Pasta: ${CONFIG.DOWNLOAD_PATH}`,
+      enabled: false
+    },
+    {
+      label: `🌐 Backend: ${new URL(CONFIG.BACKEND_URL).hostname}`,
+      enabled: false
+    },
+    {
+      label: `🆔 Bridge: ${BRIDGE_ID}`,
+      enabled: false
+    },
     { type: 'separator' },
     {
-      label: 'Sair',
-      click: () => { isQuitting = true; app.quit(); }
+      label: menuLoaded ? '✅ Cardápio: Carregado' : '⚠️ Cardápio: Não encontrado',
+      enabled: false
+    },
+    {
+      label: CONFIG.API_KEY ? '🔐 API Key: Ativada' : '🔓 API Key: Desativada',
+      enabled: false
+    },
+    { type: 'separator' },
+    {
+      label: '🚪 Sair',
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      }
     }
   ]);
   
   tray.setContextMenu(contextMenu);
   tray.setToolTip('Kitchen Flow Bridge');
   
+  // Clique no tray alterna mostrar/esconder
   tray.on('click', () => {
     if (mainWindow?.isVisible()) {
       mainWindow.hide();
@@ -239,48 +391,84 @@ function createTray() {
   });
 }
 
+// ============================================================================
+// INICIAR WATCHER DE ARQUIVOS
+// ============================================================================
 function startWatcher() {
   if (!ensureWatchPath()) {
     log('ERROR', 'Não foi possível iniciar monitoramento');
-    showNotification('Erro', `Pasta não encontrada: ${CONFIG.DOWNLOAD_PATH}`, 'error');
+    showNotification('Erro de configuração', `Pasta não encontrada: ${CONFIG.DOWNLOAD_PATH}`, 'error');
     return;
   }
   
   watcher = new Watcher(CONFIG.DOWNLOAD_PATH, { onNewFile: handleNewFile });
-  log('INFO', `Monitorando: ${CONFIG.DOWNLOAD_PATH}`);
+  log('INFO', `✅ Monitorando: ${CONFIG.DOWNLOAD_PATH}`);
 }
 
-ipcMain.handle('get-config', () => ({ ...CONFIG, bridgeId: BRIDGE_ID }));
+// ============================================================================
+// IPC HANDLERS (COMUNICAÇÃO COM JANELA)
+// ============================================================================
+ipcMain.handle('get-config', () => ({ 
+  ...CONFIG, 
+  bridgeId: BRIDGE_ID,
+  menuLoaded 
+}));
+
 ipcMain.handle('get-status', () => ({
   watching: watcher?.isActive || false,
   backend: CONFIG.BACKEND_URL,
   uptime: process.uptime(),
-  bridgeId: BRIDGE_ID
+  bridgeId: BRIDGE_ID,
+  menuLoaded,
+  memory: Math.round(process.memoryUsage().heapUsed / 1024 / 1024)
 }));
+
 ipcMain.handle('trigger-test', () => watcher?.triggerTest?.());
 
+ipcMain.handle('reload-menu', () => {
+  const success = loadMenuMap();
+  return { success, loaded: Object.keys(menuMap.pratos || {}).length };
+});
+
+// ============================================================================
+// INICIALIZAÇÃO DO APP
+// ============================================================================
 app.whenReady().then(async () => {
-  log('INFO', 'Kitchen Flow Bridge iniciando...');
+  log('INFO', '🚀 Kitchen Flow Bridge iniciando...');
   log('INFO', `Backend: ${CONFIG.BACKEND_URL}`);
   log('INFO', `Bridge ID: ${BRIDGE_ID}`);
+  log('INFO', `Cardápio: ${menuLoaded ? 'Carregado' : 'Não encontrado'}`);
   
   createTray();
   createWindow();
   startWatcher();
   
-  showNotification('Kitchen Flow Bridge', 'Monitoramento ativo');
+  showNotification('Kitchen Flow Bridge', 'Monitoramento ativo • Pronto para pedidos');
 });
 
+// ============================================================================
+// LIFECYCLE EVENTS
+// ============================================================================
 app.on('window-all-closed', () => {
+  // Manter app rodando no tray (Windows/Linux)
   if (process.platform !== 'darwin') {
-    // Manter rodando no tray
+    // Não fecha
   }
 });
 
 app.on('before-quit', () => {
   isQuitting = true;
   watcher?.stop();
-  log('INFO', 'Encerrando...');
+  log('INFO', '🛑 Encerrando Kitchen Flow Bridge...');
 });
 
-module.exports = { CONFIG, BRIDGE_ID, handleNewFile };
+// ============================================================================
+// EXPORTS PARA TESTES
+// ============================================================================
+module.exports = { 
+  CONFIG, 
+  BRIDGE_ID, 
+  handleNewFile,
+  generateMockOrder,
+  menuMap
+};
