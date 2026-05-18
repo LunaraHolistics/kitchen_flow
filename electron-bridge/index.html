@@ -1,0 +1,14 @@
+﻿<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>Kitchen Flow Bridge</title></head>
+<body style="background:#1a1a2e;color:#eee;font-family:sans-serif;padding:20px;text-align:center">
+  <h2>🍳 Kitchen Flow Bridge</h2>
+  <div id="status">⏳ Inicializando...</div>
+  <script>
+    if (window.bridgeAPI) {
+      bridgeAPI.getConfig().then(cfg => {
+        document.getElementById('status').innerHTML = 
+          `✅ Online<br>📁 ${cfg.DOWNLOAD_PATH}<br>🌐 ${cfg.BACKEND_URL}`;
+      });
+    }
+  </script>
+</body></html>

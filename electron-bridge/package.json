@@ -8,11 +8,11 @@
     "dev": "electron . --dev",
     "build": "electron-builder --win",
     "build:dir": "electron-builder --dir --win"
-    },
+  },
   "dependencies": {
     "chokidar": "^3.5.3",
-    "uuid": "^9.0.1",
-    "moment": "^2.29.4"
+    "moment": "^2.29.4",
+    "uuid": "^9.0.1"
   },
   "devDependencies": {
     "electron": "^27.0.0",
