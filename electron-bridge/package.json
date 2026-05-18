@@ -30,7 +30,7 @@
           ]
         }
       ],
-      "icon": "icon.png",
+      "icon": "icon.ico",
       "requestedExecutionLevel": "asInvoker"
     },
     "nsis": {
@@ -40,9 +40,9 @@
       "createStartMenuShortcut": true,
       "shortcutName": "Kitchen Flow Bridge",
       "runAfterFinish": false,
-      "installerIcon": "icon.png",
-      "uninstallerIcon": "icon.png",
-      "installerHeaderIcon": "icon.png",
+      "installerIcon": "icon.ico",
+      "uninstallerIcon": "icon.ico",
+      "installerHeaderIcon": "icon.ico",
       "installerLanguages": [
         "pt_BR"
       ],
