@@ -16,30 +16,55 @@ const CONFIG = {
 };
 
 // ============================================================================
-// CARREGAR DICIONÁRIO DO CARDÁPIO
+// CARREGAR DICIONÁRIO DO CARDÁPIO (COM SUPORTE A MENU EXTERNO)
 // ============================================================================
-const MENU_MAP_PATH = path.join(__dirname, 'menu-map.json');
+const MENU_MAP_BUNDLED = path.join(__dirname, 'menu-map.json');
+const MENU_MAP_EXTERNAL = path.join(app.getPath('userData'), 'menu-map.json');
+
 let menuMap = { pratos: {}, acompanhamentos_avulsos: {}, acompanhamentos_fixos_por_categoria: {} };
+let menuSource = 'bundled';
 
 function loadMenuMap() {
-  try {
-    if (fs.existsSync(MENU_MAP_PATH)) {
-      menuMap = JSON.parse(fs.readFileSync(MENU_MAP_PATH, 'utf8'));
-      console.log(`📖 Cardápio carregado: ${Object.keys(menuMap.pratos || {}).length} pratos`);
+  if (fs.existsSync(MENU_MAP_EXTERNAL)) {
+    try {
+      const external = JSON.parse(fs.readFileSync(MENU_MAP_EXTERNAL, 'utf8'));
+      console.log(`📖 Cardápio carregado (EXTERNO): ${Object.keys(external.pratos || {}).length} pratos`);
+      menuMap = external;
+      menuSource = 'external';
       return true;
+    } catch(e) {
+      console.error('❌ Erro ao carregar menu externo:', e.message);
     }
-    return false;
-  } catch(e) {
-    console.error('❌ Erro ao carregar menu-map.json:', e.message);
-    return false;
   }
+  
+  if (fs.existsSync(MENU_MAP_BUNDLED)) {
+    try {
+      const bundled = JSON.parse(fs.readFileSync(MENU_MAP_BUNDLED, 'utf8'));
+      console.log(`📖 Cardápio carregado (EMBATIDO): ${Object.keys(bundled.pratos || {}).length} pratos`);
+      menuMap = bundled;
+      menuSource = 'bundled';
+      return true;
+    } catch(e) {
+      console.error('❌ Erro ao carregar menu embutido:', e.message);
+    }
+  }
+  
+  console.warn('⚠️ Nenhum cardápio encontrado. Usando estrutura vazia.');
+  return false;
 }
+
+function reloadMenuMap() {
+  const success = loadMenuMap();
+  log('INFO', `🔄 Cardápio recarregado: ${menuSource} | ${Object.keys(menuMap.pratos || {}).length} pratos`);
+  return { success, source: menuSource, count: Object.keys(menuMap.pratos || {}).length };
+}
+
 loadMenuMap();
 
 // ============================================================================
 // VARIÁVEIS GLOBAIS
 // ============================================================================
-let mainWindow = null; // ← Garante instância única
+let mainWindow = null;
 let tray = null;
 let watcher = null;
 let isQuitting = false;
@@ -59,7 +84,6 @@ function ensureBackupDir() {
   if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
 }
 
-// Limpeza automática de backups antigos (>24h)
 setInterval(() => {
   try {
     if (fs.existsSync(BACKUP_DIR)) {
@@ -78,7 +102,7 @@ setInterval(() => {
 }, 60 * 60 * 1000);
 
 // ============================================================================
-// PARSER SAIPos V2.1 (BASE64 + JSON + HTML STRIP)
+// PARSER SAIPos V2.1
 // ============================================================================
 function parseSaiposFile(filePath) {
   try {
@@ -94,10 +118,7 @@ function parseSaiposFile(filePath) {
     if (!data.printRows) { console.warn('⚠️ Sem printRows'); return null; }
 
     const cleanRows = data.printRows.map(row => 
-      row.replace(/<[^>]+>/g, '')
-         .replace(/&nbsp;/g, ' ')
-         .replace(/\s+/g, ' ')
-         .trim()
+      row.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim()
     );
 
     let mesa = 'Desconhecida';
@@ -125,7 +146,7 @@ function parseSaiposFile(filePath) {
 }
 
 // ============================================================================
-// GERADOR DE PEDIDO (PARSER + MAPA)
+// GERADOR DE PEDIDO
 // ============================================================================
 function generateOrderFromParsedData(parsedData) {
   if (!parsedData || !parsedData.itemsRaw.length) {
@@ -201,7 +222,7 @@ function generateRandomFallback() {
 }
 
 // ============================================================================
-// HANDLER PRINCIPAL (COM BACKUP ATÔMICO)
+// HANDLER PRINCIPAL
 // ============================================================================
 async function handleNewFile(originalPath) {
   log('INFO', `📄 Detectado: ${path.basename(originalPath)}`);
@@ -268,10 +289,9 @@ function showNotification(title, body) {
 }
 
 // ============================================================================
-// CRIAÇÃO DA JANELA (CORRIGIDA: ÚNICA INSTÂNCIA + OCULTA)
+// CRIAÇÃO DA JANELA
 // ============================================================================
 function createWindow() {
-  // ← GARANTE APENAS 1 JANELA
   if (mainWindow) {
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.show();
@@ -282,7 +302,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 420,
     height: 340,
-    show: false, // ← COMEÇA OCULTA (vai direto para bandeja)
+    show: false,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -294,12 +314,11 @@ function createWindow() {
     minimizable: false,
     maximizable: false,
     resizable: false,
-    autoHideMenuBar: true // ← Esconde barra de menu
+    autoHideMenuBar: true
   });
   
   mainWindow.loadFile('index.html');
   
-  // ← SÓ MOSTRA SE RODADO COM --dev (para debug)
   if (process.argv.includes('--dev')) {
     mainWindow.show();
     mainWindow.webContents.openDevTools({ mode: 'detach' });
@@ -315,7 +334,7 @@ function createWindow() {
 }
 
 // ============================================================================
-// CRIAÇÃO DA BANDEJA (TRAY)
+// CRIAÇÃO DA BANDEJA (TRAY) - ATUALIZADA
 // ============================================================================
 function createTray() {
   const iconPath = path.join(__dirname, 'icon.png');
@@ -337,9 +356,24 @@ function createTray() {
       }
     },
     { type: 'separator' },
+    {
+      label: '🔄 Recarregar Cardápio',
+      click: async () => {
+        const result = reloadMenuMap();
+        showNotification(
+          result.success ? '✅ Cardápio Atualizado' : '❌ Falha ao Atualizar',
+          `${result.count} pratos carregados (${result.source})`
+        );
+      }
+    },
+    { type: 'separator' },
     { label: `📁 Monitora: ${CONFIG.DOWNLOAD_PATH}`, enabled: false },
     { label: `💾 Backup: ${BACKUP_DIR}`, enabled: false },
     { label: `🌐 Backend: ${new URL(CONFIG.BACKEND_URL).hostname}`, enabled: false },
+    { 
+      label: `📖 Cardápio: ${menuSource === 'external' ? 'Externo' : 'Embutido'}`, 
+      enabled: false 
+    },
     { type: 'separator' },
     {
       label: '🚪 Sair',
@@ -353,7 +387,6 @@ function createTray() {
   tray.setContextMenu(contextMenu);
   tray.setToolTip('Kitchen Flow Bridge');
   
-  // Clique no tray alterna mostrar/esconder
   tray.on('click', () => {
     if (mainWindow) {
       if (mainWindow.isVisible()) {
@@ -399,11 +432,21 @@ ipcMain.handle('get-status', () => ({
 
 ipcMain.handle('trigger-test', () => watcher?.triggerTest?.());
 
+ipcMain.handle('reload-menu', () => {
+  return reloadMenuMap();
+});
+
+ipcMain.handle('get-menu-info', () => ({
+  source: menuSource,
+  path: menuSource === 'external' ? MENU_MAP_EXTERNAL : MENU_MAP_BUNDLED,
+  pratos: Object.keys(menuMap.pratos || {}).length,
+  lastLoaded: new Date().toISOString()
+}));
+
 // ============================================================================
 // INICIALIZAÇÃO DO APP
 // ============================================================================
 app.whenReady().then(() => {
-  // Evitar múltiplas instâncias do app
   const gotTheLock = app.requestSingleInstanceLock();
   if (!gotTheLock) {
     console.log('⚠️ Outra instância já está rodando. Encerrando.');
@@ -412,7 +455,6 @@ app.whenReady().then(() => {
   }
   
   app.on('second-instance', () => {
-    // Se tentar abrir outra instância, foca na janela existente
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.show();
@@ -431,7 +473,6 @@ app.whenReady().then(() => {
 // LIFECYCLE
 // ============================================================================
 app.on('window-all-closed', () => {
-  // Manter app rodando no tray (Windows/Linux)
   if (process.platform !== 'darwin') {
     // Não fecha
   }
