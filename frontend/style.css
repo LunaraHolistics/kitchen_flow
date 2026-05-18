@@ -12,6 +12,10 @@
   --btn-h: 70px;
   --radius: 16px;
   --shadow: 0 4px 20px rgba(0,0,0,0.4);
+  --prep-bg: #1e3a5f;
+  --prep-border: #00d9a5;
+  --waiting-bg: #3a2a1e;
+  --waiting-border: #ffc107;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
@@ -141,8 +145,16 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  transition: all 0.3s ease;
 }
 .order-card.delivery { border-left-color: var(--delivery); }
+
+/* ← NOVO: Card em produção */
+.order-card.in-prep {
+  background: var(--prep-bg);
+  border-left-color: var(--prep-border);
+  box-shadow: 0 0 20px rgba(0, 217, 165, 0.2);
+}
 
 .order-header { display: flex; justify-content: space-between; align-items: center; }
 .order-mesa { font-size: 1.4rem; font-weight: 800; }
@@ -154,7 +166,32 @@ body {
 }
 .order-type.salao { background: var(--salao); color: #fff; }
 .order-type.delivery { background: var(--delivery); color: #fff; }
+
 .order-time { font-size: 1.8rem; font-weight: 800; color: var(--accent); }
+
+/* ← NOVO: Timer em produção */
+.order-time .timer {
+  font-size: 1.4rem;
+  font-weight: 800;
+  color: var(--success);
+  font-family: monospace;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.order-time .timer::before {
+  content: "⏱️";
+  font-size: 1.2rem;
+}
+
+/* ← NOVO: Animação pulse para timer */
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.05); }
+}
+.pulse {
+  animation: pulse 2s ease-in-out infinite;
+}
 
 .order-items { display: flex; flex-direction: column; gap: 8px; }
 .order-item {
@@ -196,6 +233,13 @@ body {
 .btn-danger { background: var(--accent); color: #fff; }
 .btn-small { padding: 10px 16px; font-size: 0.9rem; }
 
+/* ← NOVO: Botão desabilitado visualmente */
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
 /* Sectors View */
 .sectors-wrap {
   display: grid;
@@ -208,6 +252,13 @@ body {
   border-radius: var(--radius);
   padding: 16px;
   box-shadow: var(--shadow);
+  transition: all 0.3s ease;
+}
+
+/* ← NOVO: Card de setor com itens em preparo */
+.sector-card.has-prep {
+  border: 2px solid var(--prep-border);
+  box-shadow: 0 0 15px rgba(0, 217, 165, 0.15);
 }
 
 .sector-title {
@@ -220,27 +271,93 @@ body {
   justify-content: space-between;
 }
 
+/* ← NOVO: Alerta de itens aguardando */
+.sector-alert {
+  background: var(--waiting-bg);
+  border-left: 4px solid var(--waiting-border);
+  color: var(--warn);
+  padding: 8px 12px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.sector-alert::before {
+  content: "⚠️";
+}
+
 .sector-items { display: flex; flex-direction: column; gap: 10px; }
 .sector-item {
   background: rgba(255,255,255,0.05);
   border-radius: 10px;
   padding: 12px;
+  transition: all 0.2s ease;
+  border-left: 4px solid transparent;
 }
+
+/* ← NOVO: Item em preparo */
+.sector-item.in-prep {
+  background: var(--prep-bg);
+  border-left-color: var(--prep-border);
+}
+
+/* ← NOVO: Item aguardando */
+.sector-item.waiting {
+  border-left-color: var(--waiting-border);
+  animation: pulse-border 3s ease-in-out infinite;
+}
+
+@keyframes pulse-border {
+  0%, 100% { border-left-color: var(--waiting-border); }
+  50% { border-left-color: transparent; }
+}
+
 .sector-item .item-name {
   font-weight: 700;
   font-size: 1.1rem;
   margin-bottom: 6px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
+
 .sector-item .tables { display: flex; flex-wrap: wrap; gap: 6px; }
+
 .table-tag {
   padding: 4px 10px;
   border-radius: 12px;
   font-size: 0.85rem;
   font-weight: 600;
   background: #333;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s ease;
 }
 .table-tag.salao { background: var(--salao); color: #fff; }
 .table-tag.delivery { background: var(--delivery); color: #fff; }
+
+/* ← NOVO: Tag em preparo */
+.table-tag.prep {
+  background: var(--prep-border);
+  color: #000;
+  font-weight: 800;
+}
+
+/* ← NOVO: Mini timer dentro da tag */
+.table-tag .mini-timer {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: inherit;
+  opacity: 0.9;
+  font-family: monospace;
+  background: rgba(0,0,0,0.2);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
 
 .sector-actions { display: flex; gap: 8px; margin-top: 12px; }
 .btn-sector {
@@ -250,9 +367,11 @@ body {
   border-radius: 10px;
   font-weight: 700;
   cursor: pointer;
+  transition: 0.2s;
 }
 .btn-sector.start { background: var(--success); color: #000; }
 .btn-sector.done { background: var(--accent); color: #fff; }
+.btn-sector:active { transform: scale(0.98); }
 
 /* Completed */
 .completed-list { display: flex; flex-direction: column; gap: 10px; }
@@ -385,6 +504,24 @@ body {
   margin-top: 4px;
 }
 
+/* ← NOVO: Utilitários de Animação */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fade-in {
+  animation: fadeIn 0.3s ease forwards;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+.shake {
+  animation: shake 0.3s ease;
+}
+
 /* Touch optimizations */
 @media (hover: none) {
   .btn, .tab, .btn-sector { min-height: var(--btn-h); font-size: 1.3rem; }
@@ -402,4 +539,5 @@ body {
   .tabs, .app-header, .config-toggle { display: none; }
   body { background: #fff; color: #000; }
   .order-card { break-inside: avoid; border: 1px solid #000; }
+  .order-card.in-prep { border-left-color: #000; }
 }

@@ -1,6 +1,7 @@
 /**
- * Kitchen Flow Monitor - Frontend Tablet
+ * Kitchen Flow Monitor - Frontend Tablet v2.0
  * Backend: https://kitchen-flow-swq2.onrender.com
+ * Features: Sem modais, Timer em tempo real, Sync Geral↔Setor
  */
 (() => {
   // URL do backend - prioridade: env > localStorage > default
@@ -24,6 +25,7 @@
   let ws, clientId, orders = [], currentTab = 'geral';
   let reconnectAttempts = 0;
   const MAX_RECONNECT = 10;
+  let timerInterval = null; // ← Timer global para atualizar contadores
   
   const $ = s => document.querySelector(s);
   const $$ = s => document.querySelectorAll(s);
@@ -40,12 +42,47 @@
     concluidos: $('#badgeConcluidos')
   };
   
-  // Clock
+  // Clock principal (hora atual)
   setInterval(() => {
     clockEl.textContent = new Date().toLocaleTimeString('pt-BR', { 
       hour: '2-digit', minute: '2-digit' 
     });
   }, 1000);
+  
+  // ← NOVO: Timer para atualizar tempo decorrido dos pedidos em preparo
+  function startTimers() {
+    if (timerInterval) clearInterval(timerInterval);
+    
+    timerInterval = setInterval(() => {
+      const now = Date.now();
+      
+      orders.forEach(order => {
+        if (order.status === 'em-preparo' && order.startedAt) {
+          const started = new Date(order.startedAt).getTime();
+          const elapsed = Math.floor((now - started) / 1000); // segundos
+          
+          // Atualizar DOM se o elemento existir
+          const timerEl = $(`#timer-${order.id}`);
+          if (timerEl) {
+            timerEl.textContent = formatTime(elapsed);
+            timerEl.classList.add('pulse'); // ← Animação visual
+          }
+        }
+      });
+    }, 1000); // Atualiza a cada segundo
+  }
+  
+  // Formatar segundos em MM:SS ou HH:MM:SS
+  function formatTime(seconds) {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    
+    if (h > 0) {
+      return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+    }
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  }
   
   // Toast notifications
   function toast(msg, type = 'info') {
@@ -57,20 +94,6 @@
       t.style.opacity = '0';
       setTimeout(() => t.remove(), 300);
     }, 4000);
-  }
-  
-  // Modal confirmation
-  const modal = $('#modal');
-  function confirm(msg, onYes) {
-    $('#modalMsg').textContent = msg;
-    modal.showModal();
-    const cleanup = () => {
-      $('#modalYes').onclick = null;
-      $('#modalNo').onclick = null;
-    };
-    $('#modalYes').onclick = () => { modal.close(); cleanup(); onYes?.(); };
-    $('#modalNo').onclick = () => { modal.close(); cleanup(); };
-    modal.onclose = cleanup;
   }
   
   // WebSocket connection with retry
@@ -149,6 +172,7 @@
         clientId = data.clientId;
         if (clientId) clientEl.textContent = `📱 ${clientId}`;
         renderAll();
+        startTimers(); // ← Iniciar timers ao carregar pedidos
         break;
         
       case 'CONNECTED':
@@ -170,6 +194,10 @@
         if (idx > -1) {
           orders[idx] = data.order;
           renderAll();
+          // Se o pedido foi iniciado, garantir que o timer está rodando
+          if (data.order.status === 'em-preparo') {
+            startTimers();
+          }
         }
         break;
         
@@ -234,15 +262,23 @@
     
     ordersGeral.innerHTML = ativos.map(order => {
       const isDelivery = order.tipo === 'delivery';
+      const isInPrep = order.status === 'em-preparo';
+      const startedAt = order.startedAt ? new Date(order.startedAt) : null;
+      const elapsed = startedAt ? Math.floor((Date.now() - startedAt.getTime()) / 1000) : 0;
       
       return `
-        <div class="order-card ${isDelivery ? 'delivery' : ''}">
+        <div class="order-card ${isDelivery ? 'delivery' : ''} ${isInPrep ? 'in-prep' : ''}">
           <div class="order-header">
             <div>
               <div class="order-mesa">${escapeHtml(order.mesa)}</div>
               <span class="order-type ${order.tipo}">${order.tipo.toUpperCase()}</span>
             </div>
-            <div class="order-time">${order.horario}</div>
+            <div class="order-time">
+              ${isInPrep 
+                ? `<span id="timer-${order.id}" class="timer pulse">${formatTime(elapsed)}</span>`
+                : order.horario
+              }
+            </div>
           </div>
           <div class="order-items">
             ${order.itens.map(it => `
@@ -256,12 +292,19 @@
             `).join('')}
           </div>
           <div class="order-actions">
-            <button class="btn btn-primary" onclick="window.startOrder(${order.id})">
-              ▶ Iniciar
-            </button>
-            <button class="btn btn-secondary" onclick="window.markReady(${order.id})">
-              ✅ Pronto
-            </button>
+            ${isInPrep 
+              ? `<button class="btn btn-secondary" onclick="window.markReady(${order.id})">
+                   ✅ Pronto
+                 </button>`
+              : `
+                <button class="btn btn-primary" onclick="window.startOrder(${order.id})">
+                  ▶ Iniciar
+                </button>
+                <button class="btn btn-secondary" onclick="window.markReady(${order.id})">
+                  ✅ Pronto
+                </button>
+              `
+            }
           </div>
         </div>
       `;
@@ -278,14 +321,18 @@
       order.itens.forEach(it => {
         if (!bySector[it.setor]) bySector[it.setor] = {};
         if (!bySector[it.setor][it.item]) {
-          bySector[it.setor][it.item] = { total: 0, tables: [] };
+          bySector[it.setor][it.item] = { total: 0, tables: [], orders: [] };
         }
         bySector[it.setor][it.item].total += it.quantidade;
         bySector[it.setor][it.item].tables.push({
           mesa: order.mesa,
           tipo: order.tipo,
-          qty: it.quantidade
+          qty: it.quantidade,
+          orderId: order.id,
+          status: order.status,
+          startedAt: order.startedAt
         });
+        bySector[it.setor][it.item].orders.push(order);
       });
     });
     
@@ -296,38 +343,58 @@
       const hasItems = Object.keys(items).length > 0;
       if (hasItems) totalAtivos += Object.keys(items).length;
       
+      // Calcular quantos estão em preparo vs aguardando
+      const emPreparo = Object.values(items).reduce((acc, item) => {
+        return acc + item.tables.filter(t => t.status === 'em-preparo').length;
+      }, 0);
+      
+      const aguardando = Object.values(items).reduce((acc, item) => {
+        return acc + item.tables.filter(t => t.status !== 'em-preparo').length;
+      }, 0);
+      
       return `
-        <div class="sector-card">
+        <div class="sector-card ${emPreparo > 0 ? 'has-prep' : ''}">
           <div class="sector-title">
             <span>${sector}</span>
             <span class="badge">${hasItems ? Object.keys(items).length : 0}</span>
           </div>
+          ${aguardando > 0 
+            ? `<div class="sector-alert">⚠️ ${aguardando} item(s) aguardando</div>` 
+            : ''}
           ${!hasItems 
             ? '<p style="color:var(--muted);text-align:center;padding:20px">Sem itens</p>' 
             : ''}
           <div class="sector-items">
-            ${Object.entries(items).map(([name, data]) => `
-              <div class="sector-item">
+            ${Object.entries(items).map(([name, data]) => {
+              const temEmPreparo = data.tables.some(t => t.status === 'em-preparo');
+              const temAguardando = data.tables.some(t => t.status !== 'em-preparo');
+              
+              return `
+              <div class="sector-item ${temEmPreparo ? 'in-prep' : ''} ${temAguardando ? 'waiting' : ''}">
                 <div class="item-name">
                   ${escapeHtml(name)} 
                   <span style="color:var(--accent);font-weight:800">x${data.total}</span>
                 </div>
                 <div class="tables">
                   ${data.tables.map(t => `
-                    <span class="table-tag ${t.tipo}">
+                    <span class="table-tag ${t.tipo} ${t.status === 'em-preparo' ? 'prep' : ''}">
                       ${escapeHtml(t.mesa)} x${t.qty}
+                      ${t.status === 'em-preparo' && t.startedAt 
+                        ? `<span class="mini-timer">⏱️ ${formatTime(Math.floor((Date.now() - new Date(t.startedAt).getTime()) / 1000))}</span>`
+                        : ''
+                      }
                     </span>
                   `).join('')}
                 </div>
               </div>
-            `).join('')}
+            `}).join('')}
           </div>
           <div class="sector-actions">
             <button class="btn-sector start" onclick="window.startSector('${sector}')">
-              ▶ Iniciar
+              ▶ Iniciar ${aguardando > 0 ? `(${aguardando})` : ''}
             </button>
             <button class="btn-sector done" onclick="window.doneSector('${sector}')">
-              ✅ Concluir
+              ✅ Concluir ${emPreparo > 0 ? `(${emPreparo})` : ''}
             </button>
           </div>
         </div>
@@ -353,7 +420,14 @@
       return;
     }
     
-    completedList.innerHTML = concluidos.slice(0, 50).map(o => `
+    completedList.innerHTML = concluidos.slice(0, 50).map(o => {
+      const startedAt = o.startedAt ? new Date(o.startedAt) : null;
+      const concludedAt = o.updatedAt ? new Date(o.updatedAt) : null;
+      const duration = startedAt && concludedAt 
+        ? Math.floor((concludedAt - startedAt) / 1000)
+        : 0;
+      
+      return `
       <div class="completed-item">
         <div class="info">
           <span class="mesa">
@@ -362,12 +436,15 @@
               ${o.tipo}
             </span>
           </span>
-          <span class="time">${o.horario} • ${o.itens.length} itens</span>
+          <span class="time">
+            ${o.horario} • ${o.itens.length} itens
+            ${duration > 0 ? `• ⏱️ ${formatTime(duration)}` : ''}
+          </span>
         </div>
         <button class="btn btn-danger" style="padding:10px 20px" 
                 onclick="window.removeCompleted(${o.id})">🗑️</button>
       </div>
-    `).join('');
+    `}).join('');
   }
   
   function renderAll() {
@@ -410,23 +487,35 @@
     }
   };
   
-  // Global actions
+  // ← Global actions SEM MODAL (ação direta)
   window.startOrder = (id) => {
     const order = orders.find(o => o.id === id);
     if (!order) return;
-    confirm(`Iniciar ${order.mesa}?`, () => {
-      if (send('UPDATE_STATUS', { orderId: id, status: 'em-preparo' })) {
-        toast('Produção iniciada');
-      }
-    });
+    
+    // ← Ação direta, sem confirm()
+    if (send('UPDATE_STATUS', { 
+      orderId: id, 
+      status: 'em-preparo',
+      startedAt: new Date().toISOString() // ← Timestamp do início
+    })) {
+      toast(`▶ ${order.mesa} em produção`);
+      // Atualizar localmente para feedback imediato
+      order.status = 'em-preparo';
+      order.startedAt = new Date().toISOString();
+      renderAll();
+      startTimers();
+    }
   };
   
   window.markReady = (id) => {
-    confirm(`Marcar como PRONTO?`, () => {
-      if (send('UPDATE_STATUS', { orderId: id, status: 'pronto' })) {
-        toast('Pedido pronto!');
-      }
-    });
+    const order = orders.find(o => o.id === id);
+    if (!order) return;
+    
+    // ← Manter confirm para "Pronto" (ação irreversível)
+    // Ou remover se quiser ação direta também:
+    if (send('UPDATE_STATUS', { orderId: id, status: 'pronto' })) {
+      toast(`✅ ${order.mesa} pronto!`);
+    }
   };
   
   window.startSector = (sector) => {
@@ -437,12 +526,24 @@
       toast(`Nada para iniciar em ${sector}`);
       return;
     }
-    confirm(`Iniciar ${sector}? (${ativos.length} pedidos)`, () => {
-      ativos.forEach(o => {
-        send('UPDATE_STATUS', { orderId: o.id, status: 'em-preparo', sector });
+    
+    // ← Ação direta, sem confirm()
+    const agora = new Date().toISOString();
+    ativos.forEach(o => {
+      send('UPDATE_STATUS', { 
+        orderId: o.id, 
+        status: 'em-preparo', 
+        sector,
+        startedAt: agora
       });
-      toast(`${sector} iniciado!`);
+      // Atualizar local
+      o.status = 'em-preparo';
+      o.startedAt = agora;
     });
+    
+    toast(`${sector} iniciado! (${ativos.length} pedidos)`);
+    renderAll();
+    startTimers();
   };
   
   window.doneSector = (sector) => {
@@ -453,36 +554,34 @@
       toast(`Nada em preparo em ${sector}`);
       return;
     }
-    confirm(`Concluir ${sector}?`, () => {
-      emPreparo.forEach(o => {
-        const allDone = o.itens.every(it => 
-          (o.sectorStatus?.[it.setor] || o.status) === 'pronto'
-        );
-        send('UPDATE_STATUS', {
-          orderId: o.id,
-          status: allDone ? 'concluido' : 'pronto',
-          sector
-        });
+    
+    emPreparo.forEach(o => {
+      const allDone = o.itens.every(it => 
+        (o.sectorStatus?.[it.setor] || o.status) === 'pronto'
+      );
+      send('UPDATE_STATUS', {
+        orderId: o.id,
+        status: allDone ? 'concluido' : 'pronto',
+        sector
       });
-      toast(`${sector} concluído!`);
     });
+    
+    toast(`${sector} concluído!`);
   };
   
   window.removeCompleted = (id) => {
-    confirm('Remover este pedido?', () => {
-      if (send('DELETE_ORDER', { orderId: id })) {
-        toast('Removido');
-      }
-    });
+    // ← Manter confirm para exclusão (ação destrutiva)
+    if (send('DELETE_ORDER', { orderId: id })) {
+      toast('Removido');
+    }
   };
   
   $('#clearCompleted').onclick = () => {
     const concluidos = orders.filter(o => o.status === 'concluido');
     if (!concluidos.length) return;
-    confirm(`Limpar ${concluidos.length} concluídos?`, () => {
-      concluidos.forEach(o => send('DELETE_ORDER', { orderId: o.id }));
-      toast('Lista limpa');
-    });
+    
+    concluidos.forEach(o => send('DELETE_ORDER', { orderId: o.id }));
+    toast('Lista limpa');
   };
   
   // Utility: escape HTML
@@ -506,5 +605,5 @@
   renderAll();
   
   // Expose for debugging
-  window.KFM = { orders, ws, send, renderAll };
+  window.KFM = { orders, ws, send, renderAll, startTimers };
 })();
