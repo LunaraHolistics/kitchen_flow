@@ -23,17 +23,31 @@
     "appId": "com.kitchenflow.bridge",
     "productName": "Kitchen Flow Bridge",
     "win": {
-      "target": [{"target": "nsis", "arch": ["x64"]}],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "icon": "icon.png",
       "requestedExecutionLevel": "asInvoker"
     },
     "nsis": {
-      "oneClick": true,
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Kitchen Flow Bridge",
-      "runAfterFinish": true,
-      "installerLanguages": ["pt_BR"]
+      "runAfterFinish": false,
+      "installerIcon": "icon.png",
+      "uninstallerIcon": "icon.png",
+      "installerHeaderIcon": "icon.png",
+      "installerLanguages": [
+        "pt_BR"
+      ],
+      "language": "1046"
     },
     "directories": {
       "output": "dist"

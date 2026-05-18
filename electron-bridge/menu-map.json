@@ -1,8 +1,9 @@
 {
   "meta": {
-    "version": "1.0",
+    "version": "2.1",
     "restaurante": "Na Fazenda Restaurante e Eventos",
-    "ultima_atualizacao": "2026-05-13"
+    "ultima_atualizacao": "2026-05-14",
+    "nota": "Chaves em minúsculas para match fuzzy com parser Saipos"
   },
   "setores": {
     "Fogão": "Pratos quentes, grelhados, molhos, arroz, feijão",
@@ -161,10 +162,10 @@
       "nome_tablet": "Abóbora Recheada (serve 3)",
       "categoria": "compartilhar",
       "composicao": [
-        { "item": "Abóbora Cabotiá Recheada (Carne Seca + Requeijão)", "setor": "Fogão", "quantidade": 1 },
+        { "item": "Abóbora Cabotiá Recheada", "setor": "Fogão", "quantidade": 1 },
         { "item": "Arroz Branco", "setor": "Fogão", "quantidade": 1 },
         { "item": "Farofa Artesanal", "setor": "Frios", "quantidade": 1 },
-        { "item": "Salada Fresca de Rúcula com Tomate Cereja", "setor": "Saladas", "quantidade": 1 }
+        { "item": "Salada Fresca de Rúcula", "setor": "Saladas", "quantidade": 1 }
       ]
     },
     "arroz caldoso de fraldinha": {
@@ -295,6 +296,9 @@
     ],
     "kids": [
       { "item": "Talher Infantil", "setor": "Frios", "quantidade": 1 }
+    ],
+    "entrada": [
+      { "item": "Molho da Casa", "setor": "Frios", "quantidade": 1 }
     ]
   }
 }

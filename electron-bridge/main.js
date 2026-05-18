@@ -16,45 +16,38 @@ const CONFIG = {
 };
 
 // ============================================================================
-// CARREGAR DICIONÁRIO DO CARDÁPIO (menu-map.json)
+// CARREGAR DICIONÁRIO DO CARDÁPIO
 // ============================================================================
 const MENU_MAP_PATH = path.join(__dirname, 'menu-map.json');
-let menuMap = { 
-  pratos: {}, 
-  acompanhamentos_avulsos: {}, 
-  acompanhamentos_fixos_por_categoria: {},
-  setores: {}
-};
+let menuMap = { pratos: {}, acompanhamentos_avulsos: {}, acompanhamentos_fixos_por_categoria: {} };
 
 function loadMenuMap() {
   try {
     if (fs.existsSync(MENU_MAP_PATH)) {
       menuMap = JSON.parse(fs.readFileSync(MENU_MAP_PATH, 'utf8'));
-      const totalPratos = Object.keys(menuMap.pratos || {}).length;
-      console.log(`📖 Cardápio carregado: ${totalPratos} pratos mapeados`);
+      console.log(`📖 Cardápio carregado: ${Object.keys(menuMap.pratos || {}).length} pratos`);
       return true;
-    } else {
-      console.warn('⚠️ menu-map.json não encontrado em:', MENU_MAP_PATH);
-      return false;
     }
+    return false;
   } catch(e) {
     console.error('❌ Erro ao carregar menu-map.json:', e.message);
     return false;
   }
 }
-
-// Carregar ao iniciar
-const menuLoaded = loadMenuMap();
+loadMenuMap();
 
 // ============================================================================
 // VARIÁVEIS GLOBAIS
 // ============================================================================
-let mainWindow, tray, watcher;
+let mainWindow = null; // ← Garante instância única
+let tray = null;
+let watcher = null;
 let isQuitting = false;
 const BRIDGE_ID = uuidv4().slice(0, 8);
+const BACKUP_DIR = path.join(process.env.USERPROFILE || 'C:\\', 'KitchenFlow', 'backup');
 
 // ============================================================================
-// LOGGER
+// FUNÇÕES DE UTILIDADE
 // ============================================================================
 function log(level, msg, data = null) {
   const entry = `[${moment().format('HH:mm:ss')}] [${level}] ${msg}`;
@@ -62,234 +55,234 @@ function log(level, msg, data = null) {
   if (data) console.log('  →', JSON.stringify(data));
 }
 
+function ensureBackupDir() {
+  if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
+}
+
+// Limpeza automática de backups antigos (>24h)
+setInterval(() => {
+  try {
+    if (fs.existsSync(BACKUP_DIR)) {
+      const files = fs.readdirSync(BACKUP_DIR);
+      const now = Date.now();
+      files.forEach(f => {
+        const filePath = path.join(BACKUP_DIR, f);
+        const stats = fs.statSync(filePath);
+        if (now - stats.mtimeMs > 24 * 60 * 60 * 1000) {
+          fs.unlinkSync(filePath);
+          console.log(`🧹 Backup limpo: ${f}`);
+        }
+      });
+    }
+  } catch(e) {}
+}, 60 * 60 * 1000);
+
 // ============================================================================
-// VALIDAR PASTA DE DOWNLOADS
+// PARSER SAIPos V2.1 (BASE64 + JSON + HTML STRIP)
 // ============================================================================
-function ensureWatchPath() {
-  if (!fs.existsSync(CONFIG.DOWNLOAD_PATH)) {
-    log('WARN', `Pasta não existe: ${CONFIG.DOWNLOAD_PATH}`);
-    return false;
+function parseSaiposFile(filePath) {
+  try {
+    const rawContent = fs.readFileSync(filePath, 'utf8').trim();
+    if (!rawContent) { console.warn('⚠️ Arquivo vazio'); return null; }
+
+    const decodedBuffer = Buffer.from(rawContent, 'base64');
+    const decodedJson = decodedBuffer.toString('utf8');
+    
+    const dataArray = JSON.parse(decodedJson);
+    const data = Array.isArray(dataArray) ? dataArray[0] : dataArray;
+
+    if (!data.printRows) { console.warn('⚠️ Sem printRows'); return null; }
+
+    const cleanRows = data.printRows.map(row => 
+      row.replace(/<[^>]+>/g, '')
+         .replace(/&nbsp;/g, ' ')
+         .replace(/\s+/g, ' ')
+         .trim()
+    );
+
+    let mesa = 'Desconhecida';
+    let garcom = 'Desconhecido';
+    let itemsRaw = [];
+
+    cleanRows.forEach(row => {
+      if (row.includes('Mesa:')) {
+        const match = row.match(/Mesa:\s*(\d+)/);
+        if (match) mesa = `Mesa ${match[1]}`;
+      }
+      if (row.includes('Garçom:')) {
+        garcom = row.split('Garçom:')[1].split('-')[0].trim();
+      }
+      if (/^\d+\s+[A-Za-zÀ-ú]/.test(row) && !row.includes('Quantidade de itens') && !row.includes('ID do Pedido')) {
+        itemsRaw.push(row);
+      }
+    });
+
+    return { mesa, garcom, itemsRaw, fullData: data };
+  } catch(e) {
+    console.error('❌ Falha ao parsear:', e.message);
+    return null;
   }
-  return true;
 }
 
 // ============================================================================
-// GERADOR DE PEDIDOS COM CARDÁPIO REAL (V1.5)
+// GERADOR DE PEDIDO (PARSER + MAPA)
 // ============================================================================
-function generateMockOrder(filePath) {
-  const pratosChaves = Object.keys(menuMap.pratos || {});
-  
-  // Fallback se não houver cardápio carregado
-  if (pratosChaves.length === 0) {
-    log('WARN', 'Usando fallback aleatório (cardápio não carregado)');
+function generateOrderFromParsedData(parsedData) {
+  if (!parsedData || !parsedData.itemsRaw.length) {
+    console.warn('⚠️ Nenhum item encontrado, usando fallback');
     return generateRandomFallback();
   }
 
-  // Escolhe um prato aleatório do cardápio real (simulando leitura do arquivo)
-  const pratoChave = pratosChaves[Math.floor(Math.random() * pratosChaves.length)];
-  const prato = menuMap.pratos[pratoChave];
-  
-  if (!prato || !prato.composicao) {
-    log('ERROR', `Prato "${pratoChave}" sem composição válida`);
-    return generateRandomFallback();
-  }
-  
-  // Monta a composição base do prato
-  let itens = [...prato.composicao];
-  
-  // Adiciona acompanhamentos fixos por categoria (ex: pão para pratos "compartilhar")
-  const categoria = prato.categoria;
-  if (categoria && menuMap.acompanhamentos_fixos_por_categoria?.[categoria]) {
-    itens = [...itens, ...menuMap.acompanhamentos_fixos_por_categoria[categoria]];
-  }
+  const itensFinais = [];
 
-  // Define se é delivery ou salão (20% de chance de delivery)
-  const isDelivery = Math.random() < 0.2;
-  
+  parsedData.itemsRaw.forEach(rawItem => {
+    const match = rawItem.match(/^(\d+)\s+(.+)/);
+    if (!match) return;
+    
+    const qty = parseInt(match[1]);
+    const descricao = match[2].toLowerCase().trim();
+    
+    let matchedPrato = null;
+    for (const [key, prato] of Object.entries(menuMap.pratos)) {
+      const pratoKey = key.toLowerCase();
+      if (descricao.includes(pratoKey) || pratoKey.includes(descricao.split(' ')[0])) {
+        matchedPrato = prato;
+        break;
+      }
+    }
+
+    if (matchedPrato) {
+      matchedPrato.composicao.forEach(comp => {
+        itensFinais.push({
+          uuid: uuidv4(),
+          setor: comp.setor,
+          item: comp.item,
+          quantidade: (comp.quantidade || 1) * qty,
+          original: rawItem
+        });
+      });
+      if (matchedPrato.categoria && menuMap.acompanhamentos_fixos_por_categoria?.[matchedPrato.categoria]) {
+        menuMap.acompanhamentos_fixos_por_categoria[matchedPrato.categoria].forEach(acc => {
+          itensFinais.push({
+            uuid: uuidv4(),
+            setor: acc.setor,
+            item: acc.item,
+            quantidade: (acc.quantidade || 1) * qty,
+            original: rawItem
+          });
+        });
+      }
+    } else {
+      itensFinais.push({
+        uuid: uuidv4(),
+        setor: 'Fogão',
+        item: rawItem,
+        quantidade: qty,
+        original: rawItem
+      });
+    }
+  });
+
   return {
-    mesa: isDelivery 
-      ? `Delivery #${Math.floor(Math.random() * 500) + 1}` 
-      : `Mesa ${Math.floor(Math.random() * 20) + 1}`,
-    tipo: isDelivery ? 'delivery' : 'salao',
-    pratoOriginal: prato.nome_tablet, // Para debug/futuro parser
-    categoria: categoria,
-    itens: itens.map(i => ({
-      uuid: uuidv4(),
-      setor: i.setor || 'Fogão',
-      item: i.item || 'Item',
-      quantidade: parseInt(i.quantidade) || 1
-    }))
+    mesa: parsedData.mesa,
+    garcom: parsedData.garcom,
+    tipo: 'salao',
+    itens: itensFinais,
+    rawItems: parsedData.itemsRaw
   };
 }
 
-// Fallback antigo (mantido por segurança)
 function generateRandomFallback() {
-  const items = [
-    { setor: 'Fritadeira', item: 'Batata frita', quantidade: 2 },
-    { setor: 'Fogão', item: 'Picanha', quantidade: 1 },
-    { setor: 'Saladas', item: 'Salada verde', quantidade: 1 }
-  ];
-  
-  const isDelivery = Math.random() < 0.2;
-  const numItems = Math.floor(Math.random() * 3) + 2;
-  const shuffled = items.sort(() => 0.5 - Math.random());
-  
   return {
-    mesa: isDelivery ? `Delivery #${Math.floor(Math.random()*500)+1}` : `Mesa ${Math.floor(Math.random()*20)+1}`,
-    tipo: isDelivery ? 'delivery' : 'salao',
-    pratoOriginal: 'Pedido Aleatório',
-    itens: shuffled.slice(0, numItems).map(i => ({
-      uuid: uuidv4(),
-      ...i
-    }))
+    mesa: `Mesa ${Math.floor(Math.random() * 20) + 1}`,
+    tipo: 'salao',
+    itens: [{ uuid: uuidv4(), setor: 'Fogão', item: 'Pedido Genérico', quantidade: 1 }]
   };
 }
 
 // ============================================================================
-// ENVIO DE PEDIDO PARA BACKEND
+// HANDLER PRINCIPAL (COM BACKUP ATÔMICO)
+// ============================================================================
+async function handleNewFile(originalPath) {
+  log('INFO', `📄 Detectado: ${path.basename(originalPath)}`);
+  
+  ensureBackupDir();
+  const fileName = path.basename(originalPath);
+  const backupPath = path.join(BACKUP_DIR, `${moment().format('YYYYMMDD_HHmmss')}_${fileName}`);
+  
+  try {
+    fs.copyFileSync(originalPath, backupPath);
+    log('INFO', `📦 Backup criado: ${backupPath}`);
+    
+    const parsedData = parseSaiposFile(backupPath);
+    if (!parsedData) {
+      log('ERROR', 'Falha ao extrair dados do pedido');
+      return;
+    }
+    
+    log('INFO', `✅ Pedido extraído: ${parsedData.mesa} | Garçom: ${parsedData.garcom} | ${parsedData.itemsRaw.length} itens`);
+    
+    const orderData = generateOrderFromParsedData(parsedData);
+    await sendOrderToBackend(originalPath, orderData);
+    showNotification('Pedido Real Capturado!', `📋 ${orderData.mesa} • ${parsedData.garcom} • ${orderData.itens.length} componentes`);
+    
+    try { if (fs.existsSync(originalPath)) fs.unlinkSync(originalPath); } catch(e) {}
+    
+  } catch(error) {
+    log('ERROR', `Falha no pipeline: ${error.message}`);
+    showNotification('Erro ao processar pedido', error.message, 'error');
+  }
+}
+
+// ============================================================================
+// ENVIO PARA BACKEND
 // ============================================================================
 async function sendOrderToBackend(filePath, mockData) {
   const url = `${CONFIG.BACKEND_URL.replace(/\/$/, '')}/api/orders`;
-  
   const payload = {
     sourceFile: path.basename(filePath),
     mockData,
     bridgeId: BRIDGE_ID,
-    timestamp: moment().toISOString()
+    timestamp: moment().toISOString(),
+    parserVersion: '2.1'
   };
   
-  const headers = {
-    'Content-Type': 'application/json',
-    'User-Agent': 'KitchenFlowBridge/2.0'
-  };
-  
-  if (CONFIG.API_KEY) {
-    headers['X-API-Key'] = CONFIG.API_KEY;
-  }
-  
-  try {
-    log('INFO', `Enviando para ${url}`);
-    
-    const response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(payload),
-      timeout: 10000
-    });
-    
-    if (!response.ok) {
-      const text = await response.text().catch(() => '');
-      throw new Error(`HTTP ${response.status}: ${text}`);
-    }
-    
-    const result = await response.json();
-    log('SUCCESS', `Pedido enviado: ${result.order?.mesa}`);
-    return result;
-    
-  } catch(error) {
-    log('ERROR', `Falha ao enviar: ${error.message}`);
-    if (!error._retried) {
-      error._retried = true;
-      await new Promise(r => setTimeout(r, 2000));
-      return sendOrderToBackend(filePath, mockData);
-    }
-    throw error;
-  }
+  const headers = { 'Content-Type': 'application/json', 'User-Agent': 'KitchenFlowBridge/2.1' };
+  if (CONFIG.API_KEY) headers['X-API-Key'] = CONFIG.API_KEY;
+
+  const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(payload), timeout: 10000 });
+  if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+  return response.json();
 }
 
 // ============================================================================
-// MOVER ARQUIVO PROCESSADO
+// NOTIFICAÇÕES
 // ============================================================================
-function moveProcessedFile(filePath) {
-  const processedDir = path.join(__dirname, 'processed');
-  if (!fs.existsSync(processedDir)) {
-    fs.mkdirSync(processedDir, { recursive: true });
-  }
-  
-  const fileName = path.basename(filePath);
-  const dest = path.join(processedDir, `${moment().format('YYYYMMDD_HHmmss')}_${fileName}`);
-  
-  try {
-    fs.copyFileSync(filePath, dest);
-    fs.unlinkSync(filePath);
-    log('INFO', `Arquivo movido: ${fileName}`);
-    return true;
-  } catch(e) {
-    log('ERROR', `Falha ao mover: ${e.message}`);
-    return false;
-  }
-}
-
-// ============================================================================
-// HANDLER: NOVO ARQUIVO DETECTADO
-// ============================================================================
-async function handleNewFile(filePath) {
-  if (!filePath.toLowerCase().endsWith('.saiposnfeprt')) return;
-  
-  log('INFO', `Novo arquivo: ${path.basename(filePath)}`);
-  
-  // Notificar janela (se aberta)
-  if (mainWindow?.webContents) {
-    mainWindow.webContents.send('file-detected', {
-      fileName: path.basename(filePath),
-      time: moment().format('HH:mm:ss')
-    });
-  }
-  
-  try {
-    // Gerar pedido com cardápio real
-    const mockData = generateMockOrder(filePath);
-    
-    // Enviar para backend
-    await sendOrderToBackend(filePath, mockData);
-    
-    // Mover arquivo original
-    moveProcessedFile(filePath);
-    
-    // Notificação visual
-    showNotification(
-      'Pedido processado!', 
-      `📋 ${mockData.mesa} • ${mockData.pratoOriginal || mockData.itens.length} itens`
-    );
-    
-  } catch(error) {
-    log('ERROR', `Erro ao processar arquivo: ${error.message}`);
-    showNotification('Erro ao processar', error.message, 'error');
-  }
-}
-
-// ============================================================================
-// NOTIFICAÇÕES DO SISTEMA
-// ============================================================================
-function showNotification(title, body, type = 'info') {
+function showNotification(title, body) {
   try {
     if (Notification.isSupported()) {
-      new Notification({ 
-        title, 
-        body, 
-        icon: path.join(__dirname, 'icon.png'),
-        silent: false
-      }).show();
+      new Notification({ title, body, icon: path.join(__dirname, 'icon.png'), silent: false }).show();
     }
-  } catch(e) {
-    log('WARN', `Notificação falhou: ${e.message}`);
-  }
-  
-  // Atualizar tooltip do tray
-  if (tray) {
-    tray.setToolTip(`Kitchen Flow: ${title}`);
-    setTimeout(() => tray.setToolTip('Kitchen Flow Bridge'), 3000);
-  }
+  } catch(e) {}
+  if (tray) tray.setToolTip(`Kitchen Flow: ${title}`);
 }
 
 // ============================================================================
-// CRIAR JANELA PRINCIPAL
+// CRIAÇÃO DA JANELA (CORRIGIDA: ÚNICA INSTÂNCIA + OCULTA)
 // ============================================================================
 function createWindow() {
+  // ← GARANTE APENAS 1 JANELA
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+    return;
+  }
+  
   mainWindow = new BrowserWindow({
-    width: 400,
-    height: 320,
-    show: process.argv.includes('--dev'),
+    width: 420,
+    height: 340,
+    show: false, // ← COMEÇA OCULTA (vai direto para bandeja)
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -301,18 +294,17 @@ function createWindow() {
     minimizable: false,
     maximizable: false,
     resizable: false,
-    alwaysOnTop: false
+    autoHideMenuBar: true // ← Esconde barra de menu
   });
   
   mainWindow.loadFile('index.html');
   
-  // Esconder ao minimizar (vai para tray)
-  mainWindow.on('minimize', (e) => {
-    e.preventDefault();
-    mainWindow.hide();
-  });
+  // ← SÓ MOSTRA SE RODADO COM --dev (para debug)
+  if (process.argv.includes('--dev')) {
+    mainWindow.show();
+    mainWindow.webContents.openDevTools({ mode: 'detach' });
+  }
   
-  // Fechar vai para tray, não encerra o app
   mainWindow.on('close', (e) => {
     if (!isQuitting) {
       e.preventDefault();
@@ -323,17 +315,13 @@ function createWindow() {
 }
 
 // ============================================================================
-// CRIAR ÍCONE NA BANDEJA (TRAY)
+// CRIAÇÃO DA BANDEJA (TRAY)
 // ============================================================================
 function createTray() {
   const iconPath = path.join(__dirname, 'icon.png');
-  let icon = nativeImage.createFromPath(iconPath);
-  
-  if (icon.isEmpty()) {
-    icon = nativeImage.createEmpty();
-  } else {
-    icon = icon.resize({ width: 16, height: 16 });
-  }
+  let icon = fs.existsSync(iconPath) 
+    ? nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 }) 
+    : nativeImage.createEmpty();
   
   tray = new Tray(icon);
   
@@ -341,32 +329,17 @@ function createTray() {
     {
       label: '👁️ Mostrar Painel',
       click: () => {
-        mainWindow?.show();
-        mainWindow?.focus();
+        if (mainWindow) {
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.show();
+          mainWindow.focus();
+        }
       }
     },
     { type: 'separator' },
-    {
-      label: `📁 Pasta: ${CONFIG.DOWNLOAD_PATH}`,
-      enabled: false
-    },
-    {
-      label: `🌐 Backend: ${new URL(CONFIG.BACKEND_URL).hostname}`,
-      enabled: false
-    },
-    {
-      label: `🆔 Bridge: ${BRIDGE_ID}`,
-      enabled: false
-    },
-    { type: 'separator' },
-    {
-      label: menuLoaded ? '✅ Cardápio: Carregado' : '⚠️ Cardápio: Não encontrado',
-      enabled: false
-    },
-    {
-      label: CONFIG.API_KEY ? '🔐 API Key: Ativada' : '🔓 API Key: Desativada',
-      enabled: false
-    },
+    { label: `📁 Monitora: ${CONFIG.DOWNLOAD_PATH}`, enabled: false },
+    { label: `💾 Backup: ${BACKUP_DIR}`, enabled: false },
+    { label: `🌐 Backend: ${new URL(CONFIG.BACKEND_URL).hostname}`, enabled: false },
     { type: 'separator' },
     {
       label: '🚪 Sair',
@@ -382,36 +355,37 @@ function createTray() {
   
   // Clique no tray alterna mostrar/esconder
   tray.on('click', () => {
-    if (mainWindow?.isVisible()) {
-      mainWindow.hide();
-    } else {
-      mainWindow?.show();
-      mainWindow?.focus();
+    if (mainWindow) {
+      if (mainWindow.isVisible()) {
+        mainWindow.hide();
+      } else {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+      }
     }
   });
 }
 
 // ============================================================================
-// INICIAR WATCHER DE ARQUIVOS
+// INICIAR WATCHER
 // ============================================================================
 function startWatcher() {
-  if (!ensureWatchPath()) {
-    log('ERROR', 'Não foi possível iniciar monitoramento');
-    showNotification('Erro de configuração', `Pasta não encontrada: ${CONFIG.DOWNLOAD_PATH}`, 'error');
-    return;
+  if (!fs.existsSync(CONFIG.DOWNLOAD_PATH)) {
+    log('ERROR', `Pasta não existe: ${CONFIG.DOWNLOAD_PATH}. Criando para testes...`);
+    fs.mkdirSync(CONFIG.DOWNLOAD_PATH, { recursive: true });
   }
-  
   watcher = new Watcher(CONFIG.DOWNLOAD_PATH, { onNewFile: handleNewFile });
-  log('INFO', `✅ Monitorando: ${CONFIG.DOWNLOAD_PATH}`);
+  log('INFO', `✅ V2.1 Ativo | Monitorando: ${CONFIG.DOWNLOAD_PATH}`);
 }
 
 // ============================================================================
-// IPC HANDLERS (COMUNICAÇÃO COM JANELA)
+// IPC HANDLERS
 // ============================================================================
 ipcMain.handle('get-config', () => ({ 
   ...CONFIG, 
   bridgeId: BRIDGE_ID,
-  menuLoaded 
+  menuLoaded: Object.keys(menuMap.pratos || {}).length > 0
 }));
 
 ipcMain.handle('get-status', () => ({
@@ -419,35 +393,42 @@ ipcMain.handle('get-status', () => ({
   backend: CONFIG.BACKEND_URL,
   uptime: process.uptime(),
   bridgeId: BRIDGE_ID,
-  menuLoaded,
+  backupDir: BACKUP_DIR,
   memory: Math.round(process.memoryUsage().heapUsed / 1024 / 1024)
 }));
 
 ipcMain.handle('trigger-test', () => watcher?.triggerTest?.());
 
-ipcMain.handle('reload-menu', () => {
-  const success = loadMenuMap();
-  return { success, loaded: Object.keys(menuMap.pratos || {}).length };
-});
-
 // ============================================================================
 // INICIALIZAÇÃO DO APP
 // ============================================================================
-app.whenReady().then(async () => {
-  log('INFO', '🚀 Kitchen Flow Bridge iniciando...');
-  log('INFO', `Backend: ${CONFIG.BACKEND_URL}`);
-  log('INFO', `Bridge ID: ${BRIDGE_ID}`);
-  log('INFO', `Cardápio: ${menuLoaded ? 'Carregado' : 'Não encontrado'}`);
+app.whenReady().then(() => {
+  // Evitar múltiplas instâncias do app
+  const gotTheLock = app.requestSingleInstanceLock();
+  if (!gotTheLock) {
+    console.log('⚠️ Outra instância já está rodando. Encerrando.');
+    app.quit();
+    return;
+  }
   
+  app.on('second-instance', () => {
+    // Se tentar abrir outra instância, foca na janela existente
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+  
+  log('INFO', ' Kitchen Flow Bridge V2.1 iniciando...');
   createTray();
   createWindow();
   startWatcher();
-  
-  showNotification('Kitchen Flow Bridge', 'Monitoramento ativo • Pronto para pedidos');
+  showNotification('Kitchen Flow V2.1', 'Parser Real Ativo • Pronto para pedidos');
 });
 
 // ============================================================================
-// LIFECYCLE EVENTS
+// LIFECYCLE
 // ============================================================================
 app.on('window-all-closed', () => {
   // Manter app rodando no tray (Windows/Linux)
@@ -458,17 +439,17 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   isQuitting = true;
-  watcher?.stop();
+  if (watcher) watcher.stop();
   log('INFO', '🛑 Encerrando Kitchen Flow Bridge...');
 });
 
 // ============================================================================
-// EXPORTS PARA TESTES
+// EXPORTS
 // ============================================================================
 module.exports = { 
   CONFIG, 
   BRIDGE_ID, 
   handleNewFile,
-  generateMockOrder,
-  menuMap
+  parseSaiposFile,
+  generateOrderFromParsedData
 };
