@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { 
+      background: #0f0f23; 
+      color: #e0e0e0; 
+      font-family: 'Segoe UI', sans-serif; 
+      text-align: center; 
+      padding: 20px; 
+      display: flex; 
+      flex-direction: column; 
+      align-items: center; 
+      justify-content: center; 
+      height: 100vh; 
+      margin: 0; 
+    }
+    h1 { color: #e94560; font-size: 1.8rem; margin-bottom: 5px; text-transform: uppercase; letter-spacing: 1px; }
+    p { color: #a0a0a0; margin-bottom: 15px; font-size: 0.95rem; }
+    
+    .gif-container { margin: 15px 0; border-radius: 10px; overflow: hidden; border: 2px solid #333; }
+    img.gif { max-width: 220px; height: auto; display: block; }
+
+    .status-box { 
+      background: #1a1a2e; 
+      padding: 15px; 
+      border-radius: 8px; 
+      border-left: 4px solid #e94560; 
+      margin-bottom: 20px; 
+      text-align: left; 
+      width: 80%; 
+    }
+    .status-box strong { color: #fff; }
+    .status-box span { color: #e94560; font-weight: bold; }
+
+    input { 
+      padding: 12px; font-size: 1.3rem; width: 80%; margin-bottom: 15px; 
+      background: #111; border: 1px solid #444; color: #00d9a5; 
+      text-align: center; letter-spacing: 3px; font-family: monospace; 
+      text-transform: uppercase;
+    }
+    input:focus { outline: none; border-color: #00d9a5; }
+
+    .btn-group { display: flex; gap: 10px; width: 90%; justify-content: center; }
+    
+    button { 
+      padding: 14px 20px; font-weight: bold; cursor: pointer; font-size: 1rem; border-radius: 5px; border: none; flex: 1;
+    }
+    .btn-activate { background: #00d9a5; color: #000; }
+    .btn-activate:hover { background: #00b88c; }
+    .btn-whatsapp { background: #25D366; color: #fff; }
+    .btn-whatsapp:hover { background: #1ebc57; }
+
+    .msg { margin-top: 15px; font-weight: bold; min-height: 20px; }
+    .success { color: #00d9a5; }
+    .error { color: #e94560; }
+  </style>
+</head>
+<body>
+  
+  <div class="gif-container">
+    <img src="fogo.gif" alt="Voltando ao fogo" class="gif">
+  </div>
+
+  <h1>🔒 Período de Teste Expirado</h1>
+  <p>Para continuar usando o Kitchen Flow, é necessário ativar a licença.</p>
+
+  <div class="status-box">
+    <div>🆔 ID da Máquina: <span id="machineId">Carregando...</span></div>
+    <div>📅 Status: <span style="color:#e94560">BLOQUEADO</span></div>
+  </div>
+
+  <input type="text" id="keyInput" placeholder="XXXX-XXXX-XXXX-XXXX" maxlength="19">
+  
+  <div class="btn-group">
+    <button class="btn-activate" onclick="tryActivate()">🔓 ATIVAR</button>
+    <button class="btn-whatsapp" onclick="window.open('https://wa.me/5516997934558?text=Olá Celso, o Kitchen Flow bloqueou. Meu ID é: ' + document.getElementById('machineId').textContent)">📱 FALAR NO WHATS</button>
+  </div>
+  
+  <p id="msg" class="msg"></p>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+    
+    document.getElementById('keyInput').addEventListener('input', function (e) {
+      e.target.value = e.target.value.toUpperCase().replace(/[^\w]/g, '').match(/.{1,4}/g)?.join('-') || '';
+    });
+
+    (async () => {
+      const status = await ipcRenderer.invoke('get-lic-status');
+      document.getElementById('machineId').textContent = status.machineId;
+    })();
+
+    async function tryActivate() {
+      const key = document.getElementById('keyInput').value;
+      const msgEl = document.getElementById('msg');
+      msgEl.className = 'msg';
+      msgEl.textContent = 'Verificando...';
+      
+      const result = await ipcRenderer.invoke('activate-license', key);
+      
+      if (result) {
+        msgEl.className = 'msg success';
+        msgEl.textContent = '✅ SUCESSO! Reiniciando...';
+        setTimeout(() => ipcRenderer.send('restart-app'), 1500);
+      } else {
+        msgEl.className = 'msg error';
+        msgEl.textContent = '❌ Chave inválida.';
+      }
+    }
+  </script>
+</body>
+</html>

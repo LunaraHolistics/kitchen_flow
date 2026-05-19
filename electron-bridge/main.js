@@ -1,3 +1,4 @@
+const LicenseManager = require('./license-manager');
 const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -334,7 +335,26 @@ function createWindow() {
 }
 
 // ============================================================================
-// CRIAÇÃO DA BANDEJA (TRAY) - ATUALIZADA
+// CRIAÇÃO DA JANELA DE BLOQUEIO (Licença Expirada)
+// ============================================================================
+function createBlockWindow() {
+  const blockWin = new BrowserWindow({
+    width: 500,
+    height: 600,
+    title: 'Kitchen Flow - Ativação Necessária',
+    resizable: false,
+    alwaysOnTop: true,
+    icon: path.join(__dirname, 'icon.ico')
+  });
+  blockWin.loadFile('block.html');
+  blockWin.on('closed', () => {
+    // Se fechar a janela de bloqueio, encerra o app
+    if (!isQuitting) app.quit();
+  });
+}
+
+// ============================================================================
+// CRIAÇÃO DA BANDEJA (TRAY)
 // ============================================================================
 function createTray() {
   const iconPath = path.join(__dirname, 'icon.png');
@@ -413,7 +433,7 @@ function startWatcher() {
 }
 
 // ============================================================================
-// IPC HANDLERS
+// IPC HANDLERS (SEM DUPLICATA)
 // ============================================================================
 ipcMain.handle('get-config', () => ({ 
   ...CONFIG, 
@@ -443,10 +463,16 @@ ipcMain.handle('get-menu-info', () => ({
   lastLoaded: new Date().toISOString()
 }));
 
+// ← LICENÇA: Handlers únicos (sem duplicata)
+ipcMain.handle('get-lic-status', () => LicenseManager.checkStatus());
+ipcMain.handle('activate-license', (event, key) => LicenseManager.activate(key));
+ipcMain.on('restart-app', () => { app.relaunch(); app.exit(0); });
+
 // ============================================================================
-// INICIALIZAÇÃO DO APP
+// INICIALIZAÇÃO DO APP (COM VERIFICAÇÃO DE LICENÇA)
 // ============================================================================
 app.whenReady().then(() => {
+  // Evitar múltiplas instâncias
   const gotTheLock = app.requestSingleInstanceLock();
   if (!gotTheLock) {
     console.log('⚠️ Outra instância já está rodando. Encerrando.');
@@ -462,7 +488,26 @@ app.whenReady().then(() => {
     }
   });
   
-  log('INFO', ' Kitchen Flow Bridge V2.1 iniciando...');
+  // 🔐 VERIFICAÇÃO DE LICENÇA (Trial 7 dias)
+  const licStatus = LicenseManager.checkStatus();
+  console.log(`🔐 Status da Licença: ${licStatus.type} | ID: ${licStatus.machineId}`);
+  
+  if (!licStatus.valid) {
+    // Trial expirado → mostra tela de bloqueio e NÃO inicia o app
+    log('ERROR', '🚫 Sistema Bloqueado: Período de teste expirado');
+    showNotification('Sistema Bloqueado', 'Período de teste expirado. Ative para continuar.', 'error');
+    createBlockWindow();
+    return; // ← Para aqui, não cria janela principal nem watcher
+  }
+  
+  // Se estiver em trial, notifica dias restantes
+  if (licStatus.type === 'trial') {
+    log('INFO', `🧪 Modo Teste: ${licStatus.daysLeft} dias restantes`);
+    showNotification(`Teste: ${licStatus.daysLeft} dias restantes`, 'Entre em contato para ativar.', 'info');
+  }
+  
+  // ✅ Licença válida → inicia app normalmente
+  log('INFO', '🚀 Kitchen Flow Bridge V2.1 iniciando...');
   createTray();
   createWindow();
   startWatcher();
@@ -474,7 +519,7 @@ app.whenReady().then(() => {
 // ============================================================================
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
-    // Não fecha
+    // Mantém app rodando no tray
   }
 });
 

@@ -1,7 +1,7 @@
 /**
- * Kitchen Flow Monitor - Frontend Tablet v2.0
+ * Kitchen Flow Monitor - Frontend Tablet v2.1
  * Backend: https://kitchen-flow-swq2.onrender.com
- * Features: Sem modais, Timer em tempo real, Sync Geral↔Setor
+ * Features: Sem modais, Timer em tempo real, Sync Geral↔Setor, Som Ding
  */
 (() => {
   // URL do backend - prioridade: env > localStorage > default
@@ -25,7 +25,7 @@
   let ws, clientId, orders = [], currentTab = 'geral';
   let reconnectAttempts = 0;
   const MAX_RECONNECT = 10;
-  let timerInterval = null; // ← Timer global para atualizar contadores
+  let timerInterval = null;
 
   const $ = s => document.querySelector(s);
   const $$ = s => document.querySelectorAll(s);
@@ -42,49 +42,42 @@
     concluidos: $('#badgeConcluidos')
   };
 
-  // Clock principal (hora atual)
+  // Clock principal
   setInterval(() => {
     clockEl.textContent = new Date().toLocaleTimeString('pt-BR', {
       hour: '2-digit', minute: '2-digit'
     });
   }, 1000);
 
-  // ← NOVO: Timer para atualizar tempo decorrido dos pedidos em preparo
+  // Timer para pedidos em preparo
   function startTimers() {
     if (timerInterval) clearInterval(timerInterval);
-
     timerInterval = setInterval(() => {
       const now = Date.now();
-
       orders.forEach(order => {
         if (order.status === 'em-preparo' && order.startedAt) {
           const started = new Date(order.startedAt).getTime();
-          const elapsed = Math.floor((now - started) / 1000); // segundos
-
-          // Atualizar DOM se o elemento existir
+          const elapsed = Math.floor((now - started) / 1000);
           const timerEl = $(`#timer-${order.id}`);
           if (timerEl) {
             timerEl.textContent = formatTime(elapsed);
-            timerEl.classList.add('pulse'); // ← Animação visual
+            timerEl.classList.add('pulse');
           }
         }
       });
-    }, 1000); // Atualiza a cada segundo
+    }, 1000);
   }
 
-  // Formatar segundos em MM:SS ou HH:MM:SS
   function formatTime(seconds) {
     const h = Math.floor(seconds / 3600);
     const m = Math.floor((seconds % 3600) / 60);
     const s = seconds % 60;
-
     if (h > 0) {
       return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
     }
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   }
 
-  // Toast notifications
   function toast(msg, type = 'info') {
     const t = document.createElement('div');
     t.className = `toast ${type === 'error' ? 'error' : ''}`;
@@ -96,10 +89,8 @@
     }, 4000);
   }
 
-  // WebSocket connection with retry
   function connect() {
     console.log(`🔌 Conectando WebSocket: ${WS_URL}`);
-
     try {
       ws = new WebSocket(WS_URL);
     } catch (e) {
@@ -108,26 +99,22 @@
       scheduleReconnect();
       return;
     }
-
     ws.onopen = () => {
       console.log('✅ WebSocket conectado');
       updateConnectionStatus(true);
       reconnectAttempts = 0;
       toast('🟢 Conectado ao servidor');
     };
-
     ws.onclose = () => {
       console.log('🔌 WebSocket desconectado');
       updateConnectionStatus(false);
       scheduleReconnect();
     };
-
     ws.onerror = (e) => {
       console.error('❌ WebSocket error:', e);
       updateConnectionStatus(false);
       if (reconnectAttempts === 0) toast('Erro de conexão', 'error');
     };
-
     ws.onmessage = (e) => {
       try {
         const { type, ...data } = JSON.parse(e.data);
@@ -153,88 +140,58 @@
       toast('Não foi possível reconectar. Recarregue a página.', 'error');
       return;
     }
-
     const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000);
     reconnectAttempts++;
-
     console.log(`🔄 Tentativa ${reconnectAttempts}/${MAX_RECONNECT} em ${delay}ms`);
     setTimeout(() => {
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        connect();
-      }
+      if (!ws || ws.readyState !== WebSocket.OPEN) connect();
     }, delay);
   }
 
-  function handleServerMessage(type, data) {
-    switch (type) {
-      case 'INIT':
-        orders = data.orders || [];
-        clientId = data.clientId;
-        if (clientId) clientEl.textContent = `📱 ${clientId}`;
-        renderAll();
-        startTimers(); // ← Iniciar timers ao carregar pedidos
-        break;
-
-      case 'CONNECTED':
-        clientId = data.clientId;
-        clientEl.textContent = `📱 ${clientId}`;
-        break;
-
-      case 'NEW_ORDER':
-        if (!orders.find(o => o.id === data.order.id)) {
-          orders.unshift(data.order);
-          renderAll();
-          toast(`🔔 Novo: ${data.order.mesa}`);
-          playSound();
-        }
-        break;
-
-      case 'ORDER_UPDATED':
-        const idx = orders.findIndex(o => o.id === data.order.id);
-        if (idx > -1) {
-          orders[idx] = data.order;
-          renderAll();
-          // Se o pedido foi iniciado, garantir que o timer está rodando
-          if (data.order.status === 'em-preparo') {
-            startTimers();
-          }
-        }
-        break;
-
-      case 'ORDER_DELETED':
-        orders = orders.filter(o => o.id !== data.orderId);
-        renderAll();
-        break;
-    }
-  }
-
-  // Play notification sound
+  // 🔔 Som de notificação original
   function playSound() {
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) return;
-
       const ctx = new AudioCtx();
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-
       osc.connect(gain);
       gain.connect(ctx.destination);
-
       osc.frequency.value = 880;
       osc.type = 'square';
-
       gain.gain.setValueAtTime(0.15, ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
-
       osc.start();
       osc.stop(ctx.currentTime + 0.25);
-
       setTimeout(() => ctx.close(), 300);
-    } catch (e) { }
+    } catch (e) {}
   }
 
-  // Send message to server
+  // 🔔 NOVO: Som de "Ding" de cozinha (sino de balcão)
+  function playDing() {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      // Efeito sino: 1200Hz → 600Hz
+      osc.frequency.setValueAtTime(1200, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(600, ctx.currentTime + 0.1);
+      // Volume: decai rápido
+      gain.gain.setValueAtTime(0.5, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.4);
+      setTimeout(() => ctx.close(), 500);
+    } catch (e) {
+      console.warn('⚠️ Não foi possível tocar o som de alerta');
+    }
+  }
+
   function send(type, payload = {}) {
     if (ws?.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type, payload }));
@@ -244,28 +201,60 @@
     return false;
   }
 
-  // Render: GERAL tab
+  function handleServerMessage(type, data) {
+    switch (type) {
+      case 'INIT':
+        orders = data.orders || [];
+        clientId = data.clientId;
+        if (clientId) clientEl.textContent = `📱 ${clientId}`;
+        renderAll();
+        startTimers();
+        break;
+      case 'CONNECTED':
+        clientId = data.clientId;
+        clientEl.textContent = `📱 ${clientId}`;
+        break;
+      case 'NEW_ORDER':
+        if (!orders.find(o => o.id === data.order.id)) {
+          orders.unshift(data.order);
+          renderAll();
+          toast(`🔔 Novo: ${data.order.mesa}`);
+          playSound();    // Som original
+          playDing();     // ← Som de "Ding" de cozinha
+        }
+        break;
+      case 'ORDER_UPDATED':
+        const idx = orders.findIndex(o => o.id === data.order.id);
+        if (idx > -1) {
+          orders[idx] = data.order;
+          renderAll();
+          if (data.order.status === 'em-preparo') startTimers();
+        }
+        break;
+      case 'ORDER_DELETED':
+        orders = orders.filter(o => o.id !== data.orderId);
+        renderAll();
+        break;
+    }
+  }
+
   function renderGeral() {
     const ativos = orders.filter(o => o.status !== 'concluido');
     badges.geral.textContent = ativos.length;
-
     if (ativos.length === 0) {
       ordersGeral.innerHTML = `
         <div class="empty">
           <span class="empty-icon">🍽️</span>
           <p>Nenhum pedido ativo</p>
           <small>Aguardando pedidos...</small>
-        </div>
-      `;
+        </div>`;
       return;
     }
-
     ordersGeral.innerHTML = ativos.map(order => {
       const isDelivery = order.tipo === 'delivery';
       const isInPrep = order.status === 'em-preparo';
       const startedAt = order.startedAt ? new Date(order.startedAt) : null;
       const elapsed = startedAt ? Math.floor((Date.now() - startedAt.getTime()) / 1000) : 0;
-
       return `
         <div class="order-card ${isDelivery ? 'delivery' : ''} ${isInPrep ? 'in-prep' : ''}">
           <div class="order-header">
@@ -274,10 +263,9 @@
               <span class="order-type ${order.tipo}">${order.tipo.toUpperCase()}</span>
             </div>
             <div class="order-time">
-              ${isInPrep
-          ? `<span id="timer-${order.id}" class="timer pulse">${formatTime(elapsed)}</span>`
-          : order.horario
-        }
+              ${isInPrep 
+                ? `<span id="timer-${order.id}" class="timer pulse">${formatTime(elapsed)}</span>` 
+                : order.horario}
             </div>
           </div>
           <div class="order-items">
@@ -288,35 +276,22 @@
                   <div class="name">${escapeHtml(it.item)}</div>
                 </div>
                 <div class="qty">x${it.quantidade}</div>
-              </div>
-            `).join('')}
+              </div>`).join('')}
           </div>
           <div class="order-actions">
-            ${isInPrep
-          ? `<button class="btn btn-secondary" onclick="window.markReady(${order.id})">
-                   ✅ Pronto
-                 </button>`
-          : `
-                <button class="btn btn-primary" onclick="window.startOrder(${order.id})">
-                  ▶ Iniciar
-                </button>
-                <button class="btn btn-secondary" onclick="window.markReady(${order.id})">
-                  ✅ Pronto
-                </button>
-              `
-        }
+            ${isInPrep 
+              ? `<button class="btn btn-secondary" onclick="window.markReady(${order.id})">✅ Pronto</button>`
+              : `<button class="btn btn-primary" onclick="window.startOrder(${order.id})">▶ Iniciar</button>
+                 <button class="btn btn-secondary" onclick="window.markReady(${order.id})">✅ Pronto</button>`}
           </div>
-        </div>
-      `;
+        </div>`;
     }).join('');
   }
 
-  // Render: SETOR tab
   function renderSetor() {
     const ativos = orders.filter(o => o.status !== 'concluido');
     const bySector = {};
     SECTORS.forEach(s => bySector[s] = {});
-
     ativos.forEach(order => {
       order.itens.forEach(it => {
         if (!bySector[it.setor]) bySector[it.setor] = {};
@@ -325,69 +300,49 @@
         }
         bySector[it.setor][it.item].total += it.quantidade;
         bySector[it.setor][it.item].tables.push({
-          mesa: order.mesa,
-          tipo: order.tipo,
-          qty: it.quantidade,
-          orderId: order.id,
-          status: order.status,
-          startedAt: order.startedAt
+          mesa: order.mesa, tipo: order.tipo, qty: it.quantidade,
+          orderId: order.id, status: order.status, startedAt: order.startedAt
         });
         bySector[it.setor][it.item].orders.push(order);
       });
     });
-
     let totalAtivos = 0;
-
     sectorsWrap.innerHTML = SECTORS.map(sector => {
       const items = bySector[sector];
       const hasItems = Object.keys(items).length > 0;
       if (hasItems) totalAtivos += Object.keys(items).length;
-
-      // Calcular quantos estão em preparo vs aguardando
-      const emPreparo = Object.values(items).reduce((acc, item) => {
-        return acc + item.tables.filter(t => t.status === 'em-preparo').length;
-      }, 0);
-
-      const aguardando = Object.values(items).reduce((acc, item) => {
-        return acc + item.tables.filter(t => t.status !== 'em-preparo').length;
-      }, 0);
-
+      const emPreparo = Object.values(items).reduce((acc, item) => 
+        acc + item.tables.filter(t => t.status === 'em-preparo').length, 0);
+      const aguardando = Object.values(items).reduce((acc, item) => 
+        acc + item.tables.filter(t => t.status !== 'em-preparo').length, 0);
       return `
         <div class="sector-card ${emPreparo > 0 ? 'has-prep' : ''}">
           <div class="sector-title">
             <span>${sector}</span>
             <span class="badge">${hasItems ? Object.keys(items).length : 0}</span>
           </div>
-          ${aguardando > 0
-          ? `<div class="sector-alert">⚠️ ${aguardando} item(s) aguardando</div>`
-          : ''}
-          ${!hasItems
-          ? '<p style="color:var(--muted);text-align:center;padding:20px">Sem itens</p>'
-          : ''}
+          ${aguardando > 0 ? `<div class="sector-alert">⚠️ ${aguardando} item(s) aguardando</div>` : ''}
+          ${!hasItems ? '<p style="color:var(--muted);text-align:center;padding:20px">Sem itens</p>' : ''}
           <div class="sector-items">
             ${Object.entries(items).map(([name, data]) => {
-            const temEmPreparo = data.tables.some(t => t.status === 'em-preparo');
-            const temAguardando = data.tables.some(t => t.status !== 'em-preparo');
-
-            return `
+              const temEmPreparo = data.tables.some(t => t.status === 'em-preparo');
+              const temAguardando = data.tables.some(t => t.status !== 'em-preparo');
+              return `
               <div class="sector-item ${temEmPreparo ? 'in-prep' : ''} ${temAguardando ? 'waiting' : ''}">
                 <div class="item-name">
-                  ${escapeHtml(name)} 
-                  <span style="color:var(--accent);font-weight:800">x${data.total}</span>
+                  ${escapeHtml(name)} <span style="color:var(--accent);font-weight:800">x${data.total}</span>
                 </div>
                 <div class="tables">
                   ${data.tables.map(t => `
                     <span class="table-tag ${t.tipo} ${t.status === 'em-preparo' ? 'prep' : ''}">
                       ${escapeHtml(t.mesa)} x${t.qty}
-                      ${t.status === 'em-preparo' && t.startedAt
-                ? `<span class="mini-timer">⏱️ ${formatTime(Math.floor((Date.now() - new Date(t.startedAt).getTime()) / 1000))}</span>`
-                : ''
-              }
-                    </span>
-                  `).join('')}
+                      ${t.status === 'em-preparo' && t.startedAt 
+                        ? `<span class="mini-timer">⏱️ ${formatTime(Math.floor((Date.now() - new Date(t.startedAt).getTime()) / 1000))}</span>` 
+                        : ''}
+                    </span>`).join('')}
                 </div>
-              </div>
-            `}).join('')}
+              </div>`;
+            }).join('')}
           </div>
           <div class="sector-actions">
             <button class="btn-sector start" onclick="window.startSector('${sector}')">
@@ -397,54 +352,42 @@
               ✅ Concluir ${emPreparo > 0 ? `(${emPreparo})` : ''}
             </button>
           </div>
-        </div>
-      `;
+        </div>`;
     }).join('');
-
     badges.setor.textContent = totalAtivos;
   }
 
-  // Render: CONCLUÍDOS tab
   function renderConcluidos() {
     const concluidos = orders.filter(o => o.status === 'concluido');
     badges.concluidos.textContent = concluidos.length;
-
     if (concluidos.length === 0) {
       completedList.innerHTML = `
         <div class="empty">
           <span class="empty-icon">✨</span>
           <p>Nenhum concluído</p>
           <small>Pedidos finalizados aparecem aqui</small>
-        </div>
-      `;
+        </div>`;
       return;
     }
-
     completedList.innerHTML = concluidos.slice(0, 50).map(o => {
       const startedAt = o.startedAt ? new Date(o.startedAt) : null;
       const concludedAt = o.updatedAt ? new Date(o.updatedAt) : null;
-      const duration = startedAt && concludedAt
-        ? Math.floor((concludedAt - startedAt) / 1000)
-        : 0;
-
+      const duration = startedAt && concludedAt ? Math.floor((concludedAt - startedAt) / 1000) : 0;
       return `
       <div class="completed-item">
         <div class="info">
           <span class="mesa">
             ${escapeHtml(o.mesa)} 
-            <span class="order-type ${o.tipo}" style="padding:2px 8px;font-size:0.75rem">
-              ${o.tipo}
-            </span>
+            <span class="order-type ${o.tipo}" style="padding:2px 8px;font-size:0.75rem">${o.tipo}</span>
           </span>
           <span class="time">
             ${o.horario} • ${o.itens.length} itens
             ${duration > 0 ? `• ⏱️ ${formatTime(duration)}` : ''}
           </span>
         </div>
-        <button class="btn btn-danger" style="padding:10px 20px" 
-                onclick="window.removeCompleted(${o.id})">🗑️</button>
-      </div>
-    `}).join('');
+        <button class="btn btn-danger" style="padding:10px 20px" onclick="window.removeCompleted(${o.id})">🗑️</button>
+      </div>`;
+    }).join('');
   }
 
   function renderAll() {
@@ -453,7 +396,6 @@
     else renderConcluidos();
   }
 
-  // Tab switching
   $$('.tab').forEach(btn => {
     btn.onclick = () => {
       $$('.tab').forEach(b => b.classList.remove('active'));
@@ -465,19 +407,13 @@
     };
   });
 
-  // Config panel
   const configPanel = $('#configPanel');
   const backendUrlInput = $('#backendUrl');
-
   $('#openConfig').onclick = () => {
     backendUrlInput.value = BACKEND_URL;
     configPanel.classList.remove('hidden');
   };
-
-  $('#toggleConfig').onclick = () => {
-    configPanel.classList.add('hidden');
-  };
-
+  $('#toggleConfig').onclick = () => configPanel.classList.add('hidden');
   $('#saveConfig').onclick = () => {
     const url = backendUrlInput.value.trim();
     if (url) {
@@ -487,19 +423,12 @@
     }
   };
 
-  // ← Global actions SEM MODAL (ação direta)
+  // Ações Globais
   window.startOrder = (id) => {
     const order = orders.find(o => o.id === id);
     if (!order) return;
-
-    // ← Ação direta, sem confirm()
-    if (send('UPDATE_STATUS', {
-      orderId: id,
-      status: 'em-preparo',
-      startedAt: new Date().toISOString() // ← Timestamp do início
-    })) {
+    if (send('UPDATE_STATUS', { orderId: id, status: 'em-preparo', startedAt: new Date().toISOString() })) {
       toast(`▶ ${order.mesa} em produção`);
-      // Atualizar localmente para feedback imediato
       order.status = 'em-preparo';
       order.startedAt = new Date().toISOString();
       renderAll();
@@ -510,15 +439,8 @@
   window.markReady = (id) => {
     const order = orders.find(o => o.id === id);
     if (!order) return;
-
-    // ← CORRIGIDO: Enviar status 'concluido' para ir para a aba correta
-    if (send('UPDATE_STATUS', {
-      orderId: id,
-      status: 'concluido',
-      concludedAt: new Date().toISOString()
-    })) {
+    if (send('UPDATE_STATUS', { orderId: id, status: 'concluido', concludedAt: new Date().toISOString() })) {
       toast(`✅ ${order.mesa} concluído!`);
-      // Atualizar localmente para feedback imediato
       order.status = 'concluido';
       order.concludedAt = new Date().toISOString();
       renderAll();
@@ -526,76 +448,43 @@
   };
 
   window.startSector = (sector) => {
-    const ativos = orders.filter(o =>
-      o.status !== 'concluido' && o.itens.some(i => i.setor === sector)
-    );
-    if (ativos.length === 0) {
-      toast(`Nada para iniciar em ${sector}`);
-      return;
-    }
-
-    // ← Ação direta, sem confirm()
+    const ativos = orders.filter(o => o.status !== 'concluido' && o.itens.some(i => i.setor === sector));
+    if (ativos.length === 0) { toast(`Nada para iniciar em ${sector}`); return; }
     const agora = new Date().toISOString();
     ativos.forEach(o => {
-      send('UPDATE_STATUS', {
-        orderId: o.id,
-        status: 'em-preparo',
-        sector,
-        startedAt: agora
-      });
-      // Atualizar local
+      send('UPDATE_STATUS', { orderId: o.id, status: 'em-preparo', sector, startedAt: agora });
       o.status = 'em-preparo';
       o.startedAt = agora;
     });
-
     toast(`${sector} iniciado! (${ativos.length} pedidos)`);
     renderAll();
     startTimers();
   };
 
   window.doneSector = (sector) => {
-    const emPreparo = orders.filter(o =>
-      o.status === 'em-preparo' && o.itens.some(i => i.setor === sector)
-    );
-    if (emPreparo.length === 0) {
-      toast(`Nada em preparo em ${sector}`);
-      return;
-    }
-
+    const emPreparo = orders.filter(o => o.status === 'em-preparo' && o.itens.some(i => i.setor === sector));
+    if (emPreparo.length === 0) { toast(`Nada em preparo em ${sector}`); return; }
     const agora = new Date().toISOString();
     emPreparo.forEach(o => {
-      // ← Sempre marcar como 'concluido' quando clicar em "Concluir"
-      send('UPDATE_STATUS', {
-        orderId: o.id,
-        status: 'concluido',
-        sector,
-        concludedAt: agora
-      });
-      // Atualizar local
+      send('UPDATE_STATUS', { orderId: o.id, status: 'concluido', sector, concludedAt: agora });
       o.status = 'concluido';
       o.concludedAt = agora;
     });
-
     toast(`${sector} concluído!`);
     renderAll();
   };
 
   window.removeCompleted = (id) => {
-    // ← Manter confirm para exclusão (ação destrutiva)
-    if (send('DELETE_ORDER', { orderId: id })) {
-      toast('Removido');
-    }
+    if (send('DELETE_ORDER', { orderId: id })) toast('Removido');
   };
 
   $('#clearCompleted').onclick = () => {
     const concluidos = orders.filter(o => o.status === 'concluido');
     if (!concluidos.length) return;
-
     concluidos.forEach(o => send('DELETE_ORDER', { orderId: o.id }));
     toast('Lista limpa');
   };
 
-  // Utility: escape HTML
   function escapeHtml(str) {
     if (!str) return '';
     const div = document.createElement('div');
@@ -603,7 +492,6 @@
     return div.innerHTML;
   }
 
-  // Prevent accidental zoom
   let lastTouchEnd = 0;
   document.addEventListener('touchend', (e) => {
     const now = Date.now();
@@ -611,10 +499,7 @@
     lastTouchEnd = now;
   }, { passive: false });
 
-  // Initialize
   connect();
   renderAll();
-
-  // Expose for debugging
   window.KFM = { orders, ws, send, renderAll, startTimers };
 })();
