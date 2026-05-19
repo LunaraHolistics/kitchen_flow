@@ -7,6 +7,16 @@ const moment = require('moment');
 const Watcher = require('./watcher');
 
 // ============================================================================
+// METADADOS DO APP
+// ============================================================================
+const APP_META = {
+  name: 'Kitchen Flow Bridge',
+  version: '2.0.0',
+  author: 'CLB Studio - by Celso Luiz',
+  description: 'Bridge para monitorar downloads do Saipos'
+};
+
+// ============================================================================
 // CONFIGURAÇÕES
 // ============================================================================
 const CONFIG = {
