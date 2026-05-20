@@ -1,0 +1,21 @@
+{
+  "name": "Kitchen Flow",
+  "short_name": "KitchenFlow",
+  "description": "Monitor de pedidos para cozinha",
+  "start_url": "/index.html",
+  "display": "standalone",
+  "background_color": "#1a1a2e",
+  "theme_color": "#1a1a2e",
+  "icons": [
+    {
+      "src": "fazenda.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "fazenda.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

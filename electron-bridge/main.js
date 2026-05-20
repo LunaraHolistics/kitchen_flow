@@ -5,6 +5,33 @@ const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const moment = require('moment');
 const Watcher = require('./watcher');
+const http = require('http');
+const dotenv = require('dotenv');
+const extensionPath = path.join(process.resourcesPath, 'browser-extension');
+
+// ============================================================================
+// CARREGAR .env CORRETAMENTE (Com fallback para dev e produção)
+// ============================================================================
+function loadEnvConfig() {
+  const possiblePaths = [
+    path.join(process.resourcesPath, '.env'),
+    path.join(__dirname, '.env'),
+    path.join(__dirname, '..', '.env'),
+    path.join(app.getAppPath(), '.env')
+  ];
+  
+  for (const envPath of possiblePaths) {
+    if (fs.existsSync(envPath)) {
+      console.log(`📄 Carregando .env de: ${envPath}`);
+      dotenv.config({ path: envPath });
+      return true;
+    }
+  }
+  console.log('⚠️ Nenhum .env encontrado, usando variáveis de ambiente ou defaults');
+  return false;
+}
+
+loadEnvConfig();
 
 // ============================================================================
 // METADADOS DO APP
@@ -17,10 +44,10 @@ const APP_META = {
 };
 
 // ============================================================================
-// CONFIGURAÇÕES
+// CONFIGURAÇÕES (Com fallback seguro)
 // ============================================================================
 const CONFIG = {
-  DOWNLOAD_PATH: process.env.KFM_DOWNLOAD_PATH || 'C:\\downloads',
+  DOWNLOAD_PATH: process.env.KFM_DOWNLOAD_PATH || 'C:\\Users\\Na Fazenda\\Downloads',
   BACKEND_URL: process.env.KFM_BACKEND_URL || 'http://localhost:4545',
   API_KEY: process.env.KFM_API_KEY || '',
   AUTO_START: process.env.KFM_AUTO_START !== 'false'
@@ -78,9 +105,54 @@ loadMenuMap();
 let mainWindow = null;
 let tray = null;
 let watcher = null;
+let httpServer = null;
 let isQuitting = false;
 const BRIDGE_ID = uuidv4().slice(0, 8);
 const BACKUP_DIR = path.join(process.env.USERPROFILE || 'C:\\', 'KitchenFlow', 'backup');
+
+// ============================================================================
+// SISTEMA DE HISTÓRICO DE DOWNLOADS
+// ============================================================================
+let downloadHistory = [];
+const MAX_HISTORY_ITEMS = 100;
+
+function addToHistory(filename, status, filePath, message = '') {
+  const entry = {
+    id: Date.now() + Math.random().toString(36).substr(2, 5),
+    filename,
+    status, // 'success' | 'error' | 'extension'
+    filePath,
+    message,
+    timestamp: new Date().toISOString(),
+    bridgeId: BRIDGE_ID
+  };
+  
+  downloadHistory.unshift(entry);
+  
+  // Limitar histórico
+  if (downloadHistory.length > MAX_HISTORY_ITEMS) {
+    downloadHistory = downloadHistory.slice(0, MAX_HISTORY_ITEMS);
+  }
+  
+  // Notificar janela principal se existir
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('history-updated', downloadHistory);
+  }
+  
+  console.log(`📋 Histórico: ${status.toUpperCase()} - ${filename}`);
+}
+
+function clearHistory() {
+  downloadHistory = [];
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('history-updated', downloadHistory);
+  }
+  log('INFO', '🧹 Histórico limpo');
+}
+
+function getHistory() {
+  return downloadHistory;
+}
 
 // ============================================================================
 // FUNÇÕES DE UTILIDADE
@@ -95,6 +167,7 @@ function ensureBackupDir() {
   if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
 }
 
+// Limpeza automática de backups antigos (roda a cada hora)
 setInterval(() => {
   try {
     if (fs.existsSync(BACKUP_DIR)) {
@@ -235,33 +308,49 @@ function generateRandomFallback() {
 // ============================================================================
 // HANDLER PRINCIPAL
 // ============================================================================
-async function handleNewFile(originalPath) {
-  log('INFO', `📄 Detectado: ${path.basename(originalPath)}`);
+async function handleNewFile(originalPath, source = 'watcher') {
+  const fileName = path.basename(originalPath);
+  log('INFO', `📄 Detectado (${source}): ${fileName}`);
   
   ensureBackupDir();
-  const fileName = path.basename(originalPath);
   const backupPath = path.join(BACKUP_DIR, `${moment().format('YYYYMMDD_HHmmss')}_${fileName}`);
   
   try {
+    // Copiar para backup
     fs.copyFileSync(originalPath, backupPath);
     log('INFO', `📦 Backup criado: ${backupPath}`);
     
+    // Parsear arquivo
     const parsedData = parseSaiposFile(backupPath);
     if (!parsedData) {
       log('ERROR', 'Falha ao extrair dados do pedido');
+      addToHistory(fileName, 'error', originalPath, 'Falha ao parsear');
       return;
     }
     
     log('INFO', `✅ Pedido extraído: ${parsedData.mesa} | Garçom: ${parsedData.garcom} | ${parsedData.itemsRaw.length} itens`);
     
+    // Gerar ordem
     const orderData = generateOrderFromParsedData(parsedData);
     await sendOrderToBackend(originalPath, orderData);
-    showNotification('Pedido Real Capturado!', `📋 ${orderData.mesa} • ${parsedData.garcom} • ${orderData.itens.length} componentes`);
     
-    try { if (fs.existsSync(originalPath)) fs.unlinkSync(originalPath); } catch(e) {}
+    // Notificar sucesso
+    showNotification('Pedido Capturado!', `📋 ${orderData.mesa} • ${parsedData.garcom} • ${orderData.itens.length} componentes`);
+    addToHistory(fileName, 'success', originalPath, `${orderData.mesa} • ${orderData.itens.length} itens`);
+    
+    // Remover original após processamento (opcional)
+    try { 
+      if (fs.existsSync(originalPath) && source === 'watcher') {
+        fs.unlinkSync(originalPath);
+        log('INFO', `🗑️ Arquivo original removido: ${fileName}`);
+      }
+    } catch(e) {
+      log('WARN', `Não foi possível remover original: ${e.message}`);
+    }
     
   } catch(error) {
     log('ERROR', `Falha no pipeline: ${error.message}`);
+    addToHistory(fileName, 'error', originalPath, error.message);
     showNotification('Erro ao processar pedido', error.message, 'error');
   }
 }
@@ -282,20 +371,38 @@ async function sendOrderToBackend(filePath, mockData) {
   const headers = { 'Content-Type': 'application/json', 'User-Agent': 'KitchenFlowBridge/2.1' };
   if (CONFIG.API_KEY) headers['X-API-Key'] = CONFIG.API_KEY;
 
-  const response = await fetch(url, { method: 'POST', headers, body: JSON.stringify(payload), timeout: 10000 });
-  if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+  const response = await fetch(url, { 
+    method: 'POST', 
+    headers, 
+    body: JSON.stringify(payload),
+    timeout: 10000
+  });
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`HTTP ${response.status}: ${errorText}`);
+  }
+  
   return response.json();
 }
 
 // ============================================================================
 // NOTIFICAÇÕES
 // ============================================================================
-function showNotification(title, body) {
+function showNotification(title, body, urgency = 'info') {
   try {
     if (Notification.isSupported()) {
-      new Notification({ title, body, icon: path.join(__dirname, 'icon.png'), silent: false }).show();
+      new Notification({ 
+        title, 
+        body, 
+        icon: path.join(__dirname, 'icon.png'), 
+        silent: urgency === 'error',
+        urgency: urgency
+      }).show();
     }
-  } catch(e) {}
+  } catch(e) {
+    console.log('⚠️ Notificação não exibida:', e.message);
+  }
   if (tray) tray.setToolTip(`Kitchen Flow: ${title}`);
 }
 
@@ -330,7 +437,8 @@ function createWindow() {
   
   mainWindow.loadFile('index.html');
   
-  if (process.argv.includes('--dev')) {
+  // Habilitar DevTools apenas em modo desenvolvimento
+  if (process.argv.includes('--dev') || process.env.NODE_ENV === 'development') {
     mainWindow.show();
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   }
@@ -341,6 +449,17 @@ function createWindow() {
       mainWindow.hide();
     }
     return false;
+  });
+  
+  mainWindow.on('ready-to-show', () => {
+    // Envia configurações iniciais para o frontend
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('config-loaded', {
+        downloadPath: CONFIG.DOWNLOAD_PATH,
+        backendUrl: CONFIG.BACKEND_URL,
+        version: APP_META.version
+      });
+    }
   });
 }
 
@@ -354,11 +473,15 @@ function createBlockWindow() {
     title: 'Kitchen Flow - Ativação Necessária',
     resizable: false,
     alwaysOnTop: true,
-    icon: path.join(__dirname, 'icon.ico')
+    icon: path.join(__dirname, 'icon.ico'),
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js')
+    }
   });
   blockWin.loadFile('block.html');
   blockWin.on('closed', () => {
-    // Se fechar a janela de bloqueio, encerra o app
     if (!isQuitting) app.quit();
   });
 }
@@ -396,9 +519,26 @@ function createTray() {
         );
       }
     },
+    {
+      label: '📁 Alterar Pasta de Monitoramento...',
+      click: async () => {
+        const { dialog } = require('electron');
+        const result = await dialog.showOpenDialog(mainWindow || undefined, {
+          properties: ['openDirectory'],
+          title: 'Selecione a pasta para monitorar downloads',
+          defaultPath: CONFIG.DOWNLOAD_PATH
+        });
+        
+        if (!result.canceled && result.filePaths[0]) {
+          const newPath = result.filePaths[0];
+          await updateDownloadPath(newPath);
+          showNotification('Pasta atualizada', `Monitorando: ${newPath}`);
+        }
+      }
+    },
     { type: 'separator' },
-    { label: `📁 Monitora: ${CONFIG.DOWNLOAD_PATH}`, enabled: false },
-    { label: `💾 Backup: ${BACKUP_DIR}`, enabled: false },
+    { label: `📁 Monitora: ${path.basename(CONFIG.DOWNLOAD_PATH)}`, enabled: false },
+    { label: `💾 Backup: ${path.basename(BACKUP_DIR)}`, enabled: false },
     { label: `🌐 Backend: ${new URL(CONFIG.BACKEND_URL).hostname}`, enabled: false },
     { 
       label: `📖 Cardápio: ${menuSource === 'external' ? 'Externo' : 'Embutido'}`, 
@@ -415,7 +555,7 @@ function createTray() {
   ]);
   
   tray.setContextMenu(contextMenu);
-  tray.setToolTip('Kitchen Flow Bridge');
+  tray.setToolTip('Kitchen Flow Bridge - Pronto');
   
   tray.on('click', () => {
     if (mainWindow) {
@@ -431,11 +571,63 @@ function createTray() {
 }
 
 // ============================================================================
+// ATUALIZAR CAMINHO DE DOWNLOAD (COM PERSISTÊNCIA)
+// ============================================================================
+async function updateDownloadPath(newPath) {
+  // Validar pasta
+  if (!fs.existsSync(newPath)) {
+    fs.mkdirSync(newPath, { recursive: true });
+  }
+  
+  // Atualizar CONFIG em memória
+  CONFIG.DOWNLOAD_PATH = newPath;
+  process.env.KFM_DOWNLOAD_PATH = newPath;
+  
+  // Atualizar .env (tentar múltiplos locais)
+  const possibleEnvPaths = [
+    path.join(process.resourcesPath, '.env'),
+    path.join(__dirname, '.env'),
+    path.join(app.getAppPath(), '.env')
+  ];
+  
+  const envContent = `KFM_BACKEND_URL=${CONFIG.BACKEND_URL}\nKFM_DOWNLOAD_PATH=${newPath}\n`;
+  
+  for (const envPath of possibleEnvPaths) {
+    try {
+      if (fs.existsSync(path.dirname(envPath))) {
+        fs.writeFileSync(envPath, envContent, 'utf8');
+        log('INFO', `📝 .env atualizado em: ${envPath}`);
+        break;
+      }
+    } catch (e) {
+      log('WARN', `Não foi possível escrever em ${envPath}: ${e.message}`);
+    }
+  }
+  
+  // Reiniciar watcher com nova pasta
+  if (watcher) {
+    watcher.stop();
+  }
+  startWatcher();
+  
+  // Atualizar tray menu
+  createTray();
+  
+  // Notificar frontend
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('config-updated', { downloadPath: newPath });
+  }
+  
+  log('INFO', `📁 Pasta de download atualizada: ${newPath}`);
+  return { success: true, path: newPath };
+}
+
+// ============================================================================
 // INICIAR WATCHER
 // ============================================================================
 function startWatcher() {
   if (!fs.existsSync(CONFIG.DOWNLOAD_PATH)) {
-    log('ERROR', `Pasta não existe: ${CONFIG.DOWNLOAD_PATH}. Criando para testes...`);
+    log('WARN', `Pasta não existe: ${CONFIG.DOWNLOAD_PATH}. Criando...`);
     fs.mkdirSync(CONFIG.DOWNLOAD_PATH, { recursive: true });
   }
   watcher = new Watcher(CONFIG.DOWNLOAD_PATH, { onNewFile: handleNewFile });
@@ -443,29 +635,129 @@ function startWatcher() {
 }
 
 // ============================================================================
-// IPC HANDLERS (SEM DUPLICATA)
+// SERVIDOR HTTP PARA EXTENSÃO DO NAVEGADOR
 // ============================================================================
+function startHttpServer() {
+  httpServer = http.createServer(async (req, res) => {
+    // Permitir CORS para extensão
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    
+    if (req.method === 'OPTIONS') {
+      res.writeHead(200);
+      res.end();
+      return;
+    }
+    
+    // Endpoint: POST /api/download (recebe captura da extensão)
+    if (req.url === '/api/download' && req.method === 'POST') {
+      let body = '';
+      
+      req.on('data', chunk => { body += chunk.toString(); });
+      
+      req.on('end', async () => {
+        try {
+          const data = JSON.parse(body);
+          const { filename, filePath, timestamp } = data;
+          
+          log('INFO', `📥 Extensão capturou: ${filename}`);
+          
+          // Validar e processar arquivo
+          if (filePath && fs.existsSync(filePath)) {
+            await handleNewFile(filePath, 'extension');
+            addToHistory(filename, 'extension', filePath, 'Capturado pela extensão');
+          } else {
+            log('WARN', `Arquivo não encontrado: ${filePath}`);
+            addToHistory(filename || 'unknown', 'error', filePath || '', 'Arquivo não encontrado');
+          }
+          
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, message: 'Processado' }));
+          
+        } catch (e) {
+          log('ERROR', `Erro ao processar da extensão: ${e.message}`);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: e.message }));
+        }
+      });
+      
+    } 
+    // Endpoint: GET /api/history (retorna histórico para extensão)
+    else if (req.url === '/api/history' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ 
+        success: true, 
+        history: getHistory().slice(0, 50) // Últimos 50
+      }));
+      
+    }
+    // Endpoint: GET /api/status (health check)
+    else if (req.url === '/api/status' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ 
+        success: true, 
+        bridgeId: BRIDGE_ID,
+        watching: watcher?.isActive || false,
+        downloadPath: CONFIG.DOWNLOAD_PATH,
+        timestamp: new Date().toISOString()
+      }));
+      
+    }
+    // 404 para outras rotas
+    else {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('Kitchen Flow Bridge API - Endpoint not found');
+    }
+  });
+  
+  httpServer.listen(4545, 'localhost', () => {
+    log('INFO', `🌐 API HTTP rodando em http://localhost:4545`);
+  });
+  
+  httpServer.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      log('WARN', '⚠️ Porta 4545 já em uso. Tentando 4546...');
+      httpServer.listen(4546, 'localhost', () => {
+        log('INFO', `🌐 API HTTP rodando em http://localhost:4546`);
+        CONFIG.BACKEND_URL = CONFIG.BACKEND_URL.replace('4545', '4546');
+      });
+    } else {
+      log('ERROR', `Erro no servidor HTTP: ${err.message}`);
+    }
+  });
+}
+
+// ============================================================================
+// IPC HANDLERS
+// ============================================================================
+
+// Configurações
 ipcMain.handle('get-config', () => ({ 
   ...CONFIG, 
   bridgeId: BRIDGE_ID,
-  menuLoaded: Object.keys(menuMap.pratos || {}).length > 0
+  menuLoaded: Object.keys(menuMap.pratos || {}).length > 0,
+  version: APP_META.version
 }));
 
+// Status do sistema
 ipcMain.handle('get-status', () => ({
   watching: watcher?.isActive || false,
   backend: CONFIG.BACKEND_URL,
   uptime: process.uptime(),
   bridgeId: BRIDGE_ID,
   backupDir: BACKUP_DIR,
-  memory: Math.round(process.memoryUsage().heapUsed / 1024 / 1024)
+  memory: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+  httpPort: httpServer?.address()?.port || 4545
 }));
 
+// Trigger de teste
 ipcMain.handle('trigger-test', () => watcher?.triggerTest?.());
 
-ipcMain.handle('reload-menu', () => {
-  return reloadMenuMap();
-});
+// Recarregar cardápio
+ipcMain.handle('reload-menu', () => reloadMenuMap());
 
+// Info do cardápio
 ipcMain.handle('get-menu-info', () => ({
   source: menuSource,
   path: menuSource === 'external' ? MENU_MAP_EXTERNAL : MENU_MAP_BUNDLED,
@@ -473,7 +765,20 @@ ipcMain.handle('get-menu-info', () => ({
   lastLoaded: new Date().toISOString()
 }));
 
-// ← LICENÇA: Handlers únicos (sem duplicata)
+// ========== HISTÓRICO ==========
+ipcMain.handle('get-history', () => getHistory());
+
+ipcMain.handle('clear-history', () => {
+  clearHistory();
+  return { success: true };
+});
+
+// ========== ALTERAR PASTA DE DOWNLOAD ==========
+ipcMain.handle('set-download-path', async (event, newPath) => {
+  return await updateDownloadPath(newPath);
+});
+
+// ========== LICENÇA ==========
 ipcMain.handle('get-lic-status', () => LicenseManager.checkStatus());
 ipcMain.handle('activate-license', (event, key) => LicenseManager.activate(key));
 ipcMain.on('restart-app', () => { app.relaunch(); app.exit(0); });
@@ -503,14 +808,13 @@ app.whenReady().then(() => {
   console.log(`🔐 Status da Licença: ${licStatus.type} | ID: ${licStatus.machineId}`);
   
   if (!licStatus.valid) {
-    // Trial expirado → mostra tela de bloqueio e NÃO inicia o app
     log('ERROR', '🚫 Sistema Bloqueado: Período de teste expirado');
     showNotification('Sistema Bloqueado', 'Período de teste expirado. Ative para continuar.', 'error');
     createBlockWindow();
-    return; // ← Para aqui, não cria janela principal nem watcher
+    return;
   }
   
-  // Se estiver em trial, notifica dias restantes
+  // Notificar se em trial
   if (licStatus.type === 'trial') {
     log('INFO', `🧪 Modo Teste: ${licStatus.daysLeft} dias restantes`);
     showNotification(`Teste: ${licStatus.daysLeft} dias restantes`, 'Entre em contato para ativar.', 'info');
@@ -518,25 +822,43 @@ app.whenReady().then(() => {
   
   // ✅ Licença válida → inicia app normalmente
   log('INFO', '🚀 Kitchen Flow Bridge V2.1 iniciando...');
+  
+  // Iniciar componentes
   createTray();
   createWindow();
   startWatcher();
-  showNotification('Kitchen Flow V2.1', 'Parser Real Ativo • Pronto para pedidos');
+  startHttpServer(); // ← NOVO: Servidor para extensão
+  
+  showNotification('Kitchen Flow V2.1', 'Parser Real + Extensão • Pronto para pedidos');
 });
 
 // ============================================================================
 // LIFECYCLE
 // ============================================================================
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
-    // Mantém app rodando no tray
-  }
+  // Mantém app rodando no tray (comportamento padrão para apps de bandeja)
 });
 
 app.on('before-quit', () => {
   isQuitting = true;
+  
+  // Parar watcher
   if (watcher) watcher.stop();
+  
+  // Fechar servidor HTTP
+  if (httpServer) {
+    httpServer.close(() => {
+      log('INFO', '🔌 Servidor HTTP fechado');
+    });
+  }
+  
   log('INFO', '🛑 Encerrando Kitchen Flow Bridge...');
+});
+
+// Lidar com SIGINT (Ctrl+C) em desenvolvimento
+process.on('SIGINT', () => {
+  log('INFO', '🛑 Recebido SIGINT, encerrando...');
+  app.quit();
 });
 
 // ============================================================================
@@ -547,5 +869,7 @@ module.exports = {
   BRIDGE_ID, 
   handleNewFile,
   parseSaiposFile,
-  generateOrderFromParsedData
+  generateOrderFromParsedData,
+  getHistory,
+  updateDownloadPath
 };

@@ -4,44 +4,95 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-  <!-- Substitua ou adicione junto com a existente -->
+  
+  <!-- PWA / Mobile Web App -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#1a1a2e">
+  <meta name="application-name" content="Kitchen Flow">
+  
+  <!-- Performance -->
+  <link rel="preconnect" href="https://kitchen-flow-swq2.onrender.com">
+  <link rel="dns-prefetch" href="https://kitchen-flow-swq2.onrender.com">
+  
   <title>🍳 Kitchen Flow</title>
   <link rel="stylesheet" href="style.css">
   <link rel="icon" type="image/png" href="fazenda.png">
+  
+  <!-- Manifest para PWA (opcional - criar arquivo manifest.json) -->
+  <link rel="manifest" href="manifest.json">
+  
+  <!-- Script de registro do Service Worker (opcional) -->
+  <script>
+    // Registrar service worker para offline cache (se existir)
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(err => {
+          console.log('SW registration failed:', err);
+        });
+      });
+    }
+    
+    // Prevenir zoom acidental em tablets
+    document.addEventListener('touchstart', (e) => {
+      if (e.touches.length > 1) e.preventDefault();
+    }, { passive: false });
+    
+    // Prevenir scroll bounce em iOS
+    document.body.addEventListener('touchmove', (e) => {
+      if (e.target.closest('.orders-grid, .sectors-wrap, .completed-list')) {
+        e.stopPropagation();
+      }
+    }, { passive: false });
+  </script>
 </head>
 
 <body>
+  <!-- Loading Overlay (inicial) -->
+  <div id="loadingOverlay" class="loading-overlay">
+    <div class="loading-spinner"></div>
+    <p>Conectando ao Kitchen Flow...</p>
+    <small id="loadingStatus">Aguardando rede...</small>
+  </div>
+
   <header class="app-header">
     <div class="brand">
       <div class="logo-wrapper">
         <img src="fazenda.png" alt="Kitchen Flow" class="brand-logo"
-          onerror="this.parentElement.querySelector('.logo-fallback').style.display='flex'">
-        <span class="logo-fallback">🍳</span>
+          onerror="this.parentElement.querySelector('.logo-fallback').style.display='flex'; this.style.display='none'">
+        <span class="logo-fallback" aria-hidden="true">🍳</span>
       </div>
       <h1>Kitchen Flow</h1>
-      <span id="connStatus" class="status offline">🔴 Offline</span>
+      <span id="connStatus" class="status offline" role="status" aria-live="polite">🔴 Offline</span>
     </div>
     <div class="info">
-      <span id="clock">--:--</span>
-      <span id="clientId" class="client-id">...</span>
+      <span id="clock" aria-label="Horário atual">--:--</span>
+      <span id="clientId" class="client-id" title="ID deste terminal">...</span>
+      <button id="soundToggle" class="icon-btn" title="Alternar som" aria-label="Alternar som de notificação">
+        🔔
+      </button>
     </div>
   </header>
 
-  <nav class="tabs">
-    <button class="tab active" data-tab="geral">📋 Geral<span id="badgeGeral" class="badge">0</span></button>
-    <button class="tab" data-tab="setor">🏭 Setor<span id="badgeSetor" class="badge">0</span></button>
-    <button class="tab" data-tab="concluidos">✅ Concluídos<span id="badgeConcluidos" class="badge">0</span></button>
+  <nav class="tabs" role="tablist" aria-label="Visualização de pedidos">
+    <button class="tab active" data-tab="geral" role="tab" aria-selected="true" aria-controls="tab-geral">
+      📋 Geral<span id="badgeGeral" class="badge" aria-label="0 pedidos">0</span>
+    </button>
+    <button class="tab" data-tab="setor" role="tab" aria-selected="false" aria-controls="tab-setor">
+      🏭 Setor<span id="badgeSetor" class="badge" aria-label="0 pedidos">0</span>
+    </button>
+    <button class="tab" data-tab="concluidos" role="tab" aria-selected="false" aria-controls="tab-concluidos">
+      ✅ Concluídos<span id="badgeConcluidos" class="badge" aria-label="0 pedidos">0</span>
+    </button>
   </nav>
 
-  <main class="content">
+  <main class="content" role="main">
     <!-- GERAL -->
-    <section id="tab-geral" class="tab-content active">
-      <div id="ordersGeral" class="orders-grid">
+    <section id="tab-geral" class="tab-content active" role="tabpanel" aria-labelledby="tab-geral-btn">
+      <div id="ordersGeral" class="orders-grid" aria-live="polite">
         <div class="empty">
-          <span class="empty-icon">🍽️</span>
+          <span class="empty-icon" aria-hidden="true">🍽️</span>
           <p>Nenhum pedido ativo</p>
           <small>Aguardando pedidos do Saipos...</small>
         </div>
@@ -49,27 +100,29 @@
     </section>
 
     <!-- SETOR -->
-    <section id="tab-setor" class="tab-content">
-      <div id="sectors" class="sectors-wrap"></div>
+    <section id="tab-setor" class="tab-content" role="tabpanel" aria-labelledby="tab-setor-btn" hidden>
+      <div id="sectors" class="sectors-wrap" aria-live="polite"></div>
     </section>
 
     <!-- CONCLUÍDOS -->
-    <section id="tab-concluidos" class="tab-content">
-      <div id="completed" class="completed-list">
+    <section id="tab-concluidos" class="tab-content" role="tabpanel" aria-labelledby="tab-concluidos-btn" hidden>
+      <div id="completed" class="completed-list" aria-live="polite">
         <div class="empty">
-          <span class="empty-icon">✨</span>
+          <span class="-icon" aria-hidden="true">✨</span>
           <p>Nenhum concluído</p>
           <small>Pedidos finalizados aparecem aqui</small>
         </div>
       </div>
-      <button id="clearCompleted" class="btn-clear">🗑️ Limpar Concluídos</button>
+      <button id="clearCompleted" class="btn-clear" aria-label="Limpar histórico de concluídos">
+        🗑️ Limpar Concluídos
+      </button>
     </section>
   </main>
 
   <!-- Modal de Confirmação -->
-  <dialog id="modal" class="modal">
+  <dialog id="modal" class="modal" role="alertdialog" aria-labelledby="modalTitle" aria-modal="true">
     <div class="modal-box">
-      <h3>Confirmar Ação</h3>
+      <h3 id="modalTitle">Confirmar Ação</h3>
       <p id="modalMsg">Deseja prosseguir?</p>
       <div class="modal-actions">
         <button id="modalNo" class="btn">Cancelar</button>
@@ -79,18 +132,48 @@
   </dialog>
 
   <!-- Toast Notifications -->
-  <div id="toasts" class="toasts"></div>
+  <div id="toasts" class="toasts" role="region" aria-label="Notificações" aria-live="assertive"></div>
 
   <!-- Config Panel (debug) -->
-  <div id="configPanel" class="config-panel hidden">
-    <h4>⚙️ Configuração</h4>
-    <label>Backend URL: <input type="text" id="backendUrl" value=""></label>
-    <button id="saveConfig" class="btn btn-small">Salvar</button>
-    <button id="toggleConfig" class="btn btn-small">Fechar</button>
+  <div id="configPanel" class="config-panel hidden" role="dialog" aria-labelledby="configTitle" aria-modal="true">
+    <h4 id="configTitle">⚙️ Configuração</h4>
+    <label>
+      Backend URL: 
+      <input type="url" id="backendUrl" value="" placeholder="https://..." pattern="https?://.+">
+    </label>
+    <div class="config-actions">
+      <button id="saveConfig" class="btn btn-small">💾 Salvar</button>
+      <button id="toggleConfig" class="btn btn-small">✖ Fechar</button>
+    </div>
+    <small class="config-note">Alterações exigem recarregar a página</small>
   </div>
-  <button id="openConfig" class="config-toggle">⚙️</button>
+  
+  <button id="openConfig" class="config-toggle" aria-label="Abrir configurações" title="Configurações">
+    ⚙️
+  </button>
 
+  <!-- Hidden audio elements for notifications -->
+  <audio id="soundNew" preload="auto">
+    <source src="sounds/new-order.mp3" type="audio/mpeg">
+    <!-- Fallback: beep via Web Audio API se arquivo não carregar -->
+  </audio>
+  <audio id="soundDone" preload="auto">
+    <source src="sounds/order-done.mp3" type="audio/mpeg">
+  </audio>
+
+  <!-- App Script -->
   <script src="app.js"></script>
+  
+  <!-- Fallback para tablets sem suporte a dialog -->
+  <script>
+    // Polyfill mínimo para <dialog> em browsers antigos
+    if (typeof HTMLDialogElement === 'undefined') {
+      console.log('⚠️ Dialog não suportado, usando fallback');
+      document.querySelectorAll('dialog').forEach(d => {
+        d.show = function() { this.style.display = 'block'; };
+        d.close = function() { this.style.display = 'none'; };
+      });
+    }
+  </script>
 </body>
-
 </html>

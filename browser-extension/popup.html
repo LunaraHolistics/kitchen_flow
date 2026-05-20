@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KitchenFlow Monitor</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo">🍳</div>
+      <div class="title">
+        <h1>KitchenFlow</h1>
+        <p class="subtitle">Download Monitor</p>
+      </div>
+    </header>
+
+    <!-- Status -->
+    <div class="status-section">
+      <div class="status-item">
+        <span class="status-icon online">✓</span>
+        <span class="status-text">Monitoramento Ativo</span>
+      </div>
+    </div>
+
+    <!-- Pasta Configurada -->
+    <div class="config-section">
+      <h2>📁 Pasta de Downloads</h2>
+      <div class="path-display" id="downloadPath">
+        Carregando...
+      </div>
+      <button class="btn btn-secondary" id="changePathBtn">
+        Alterar Pasta
+      </button>
+    </div>
+
+    <!-- Configurações de Limpeza -->
+    <div class="config-section">
+      <h2>🧹 Limpeza Automática</h2>
+      <label class="checkbox-label">
+        <input type="checkbox" id="autoClearOnStartup">
+        <span>Limpar histórico ao iniciar o navegador</span>
+      </label>
+      <label class="checkbox-label">
+        <input type="checkbox" id="autoClearOnClose">
+        <span>Limpar histórico ao fechar o navegador</span>
+      </label>
+    </div>
+
+    <!-- Histórico -->
+    <div class="history-section">
+      <div class="history-header">
+        <h2>📋 Histórico de Capturas</h2>
+        <button class="btn btn-small" id="clearHistoryBtn">
+          Limpar
+        </button>
+      </div>
+      <div class="history-list" id="historyList">
+        <div class="loading">Carregando histórico...</div>
+      </div>
+    </div>
+
+    <!-- Botões de Ação -->
+    <div class="actions">
+      <button class="btn btn-primary" id="testBtn">
+        🧪 Testar Captura
+      </button>
+      <button class="btn btn-secondary" id="refreshBtn">
+        🔄 Atualizar
+      </button>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <p>KitchenFlow v1.0.0</p>
+      <p class="credits">CLB Studio - Celso Luiz</p>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

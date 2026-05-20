@@ -1,0 +1,18 @@
+🍳 Kitchen Flow - Extensão do Navegador
+
+Para capturar pedidos diretamente do navegador (Chrome/Edge):
+
+1. Abra o Chrome ou Edge
+2. Acesse: chrome://extensions/  (ou edge://extensions/)
+3. Ative "Modo do desenvolvedor" (canto superior direito)
+4. Clique em "Carregar sem compactação"
+5. Selecione esta pasta:
+   C:\Program Files\Kitchen Flow Bridge\browser-extension
+6. ✅ Pronto! A extensão aparecerá na barra do navegador
+
+📁 A extensão monitora downloads de arquivos .saiposprt
+   e os redireciona para a pasta configurada no Kitchen Flow Bridge.
+
+💡 Dica: Clique no ícone da extensão para ver o histórico de capturas.
+
+Suporte: CLB Studio - Celso Luiz

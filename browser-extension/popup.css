@@ -1,0 +1,278 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  width: 400px;
+  min-height: 500px;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  color: #ffffff;
+}
+
+.container {
+  padding: 16px;
+}
+
+/* Header */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid #0f3460;
+}
+
+.logo {
+  font-size: 32px;
+}
+
+.title h1 {
+  font-size: 20px;
+  font-weight: 700;
+  color: #e94560;
+}
+
+.subtitle {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+/* Status */
+.status-section {
+  background: rgba(0, 217, 165, 0.1);
+  border: 1px solid #00d9a5;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 16px;
+}
+
+.status-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.status-icon.online {
+  background: #00d9a5;
+  color: #1a1a2e;
+}
+
+.status-text {
+  font-weight: 600;
+  color: #00d9a5;
+}
+
+/* Config Sections */
+.config-section {
+  background: rgba(15, 52, 96, 0.5);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.config-section h2 {
+  font-size: 14px;
+  color: #00d9a5;
+  margin-bottom: 8px;
+}
+
+.path-display {
+  background: #0f3460;
+  padding: 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: 'Courier New', monospace;
+  word-break: break-all;
+  margin-bottom: 8px;
+  color: #d1d5db;
+}
+
+/* Buttons */
+.btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  width: 100%;
+}
+
+.btn-primary {
+  background: #e94560;
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #dc2626;
+  transform: translateY(-1px);
+}
+
+.btn-secondary {
+  background: #0f3460;
+  color: #00d9a5;
+  border: 1px solid #00d9a5;
+}
+
+.btn-secondary:hover {
+  background: #16213e;
+}
+
+.btn-small {
+  padding: 4px 8px;
+  font-size: 11px;
+  width: auto;
+}
+
+/* Checkbox */
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #d1d5db;
+}
+
+.checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+/* History */
+.history-section {
+  background: rgba(15, 52, 96, 0.5);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.history-header h2 {
+  font-size: 14px;
+  color: #00d9a5;
+}
+
+.history-list {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.history-item {
+  background: #0f3460;
+  padding: 8px;
+  border-radius: 4px;
+  margin-bottom: 6px;
+  font-size: 11px;
+  border-left: 3px solid #00d9a5;
+}
+
+.history-item.error {
+  border-left-color: #dc2626;
+}
+
+.history-item.success {
+  border-left-color: #00d9a5;
+}
+
+.history-filename {
+  font-weight: 600;
+  color: #ffffff;
+  margin-bottom: 4px;
+  word-break: break-all;
+}
+
+.history-time {
+  color: #9ca3af;
+  font-size: 10px;
+}
+
+.history-path {
+  color: #6b7280;
+  font-size: 10px;
+  margin-top: 2px;
+  word-break: break-all;
+}
+
+.loading {
+  text-align: center;
+  color: #9ca3af;
+  padding: 20px;
+  font-size: 12px;
+}
+
+.empty {
+  text-align: center;
+  color: #6b7280;
+  padding: 20px;
+  font-size: 12px;
+  font-style: italic;
+}
+
+/* Actions */
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.actions .btn {
+  flex: 1;
+}
+
+/* Footer */
+.footer {
+  text-align: center;
+  padding-top: 12px;
+  border-top: 1px solid #0f3460;
+  font-size: 10px;
+  color: #6b7280;
+}
+
+.footer .credits {
+  color: #00d9a5;
+  margin-top: 2px;
+}
+
+/* Scrollbar */
+.history-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.history-list::-webkit-scrollbar-track {
+  background: #0f3460;
+  border-radius: 3px;
+}
+
+.history-list::-webkit-scrollbar-thumb {
+  background: #16213e;
+  border-radius: 3px;
+}
+
+.history-list::-webkit-scrollbar-thumb:hover {
+  background: #1a1a2e;
+}

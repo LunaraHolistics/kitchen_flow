@@ -1,16 +1,90 @@
 {
   "version": 2,
   "builds": [
-    { "src": "**/*", "use": "@vercel/static" }
+    {
+      "src": "**/*",
+      "use": "@vercel/static",
+      "config": {
+        "distDir": "."
+      }
+    }
   ],
   "routes": [
-    { "handle": "filesystem" },
-    { "src": "/.*", "status": 404, "dest": "/index.html" }
+    {
+      "src": "^/favicon\\.ico$",
+      "dest": "/favicon.ico",
+      "headers": {
+        "cache-control": "public, max-age=31536000, immutable"
+      }
+    },
+    {
+      "src": "^/fazenda\\.png$",
+      "dest": "/fazenda.png",
+      "headers": {
+        "cache-control": "public, max-age=31536000, immutable"
+      }
+    },
+    {
+      "src": "^/(style\\.css|app\\.js)$",
+      "dest": "/$1",
+      "headers": {
+        "cache-control": "public, max-age=31536000, immutable"
+      }
+    },
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/.*",
+      "status": 200,
+      "dest": "/index.html",
+      "headers": {
+        "cache-control": "no-store, no-cache, must-revalidate, proxy-revalidate"
+      }
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "X-XSS-Protection",
+          "value": "1; mode=block"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "geolocation=(), microphone=(), camera=()"
+        }
+      ]
+    },
+    {
+      "source": "/index.html",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store, no-cache, must-revalidate, proxy-revalidate"
+        }
+      ]
+    }
   ],
   "env": {
     "VITE_BACKEND_URL": "https://kitchen-flow-swq2.onrender.com"
   },
   "github": {
-    "silent": true
-  }
+    "enabled": false
+  },
+  "cleanUrls": true,
+  "trailingSlash": false
 }

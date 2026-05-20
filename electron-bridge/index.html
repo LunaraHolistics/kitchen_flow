@@ -1,14 +1,573 @@
 ﻿<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>Kitchen Flow Bridge</title></head>
-<body style="background:#1a1a2e;color:#eee;font-family:sans-serif;padding:20px;text-align:center">
-  <h2>🍳 Kitchen Flow Bridge</h2>
-  <div id="status">⏳ Inicializando...</div>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kitchen Flow Bridge</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body {
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      color: #ffffff;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      padding: 16px;
+      min-height: 100vh;
+      font-size: 13px;
+    }
+    
+    .container {
+      max-width: 400px;
+      margin: 0 auto;
+    }
+    
+    /* Header */
+    .header {
+      text-align: center;
+      padding: 12px 0;
+      border-bottom: 2px solid #0f3460;
+      margin-bottom: 16px;
+    }
+    
+    .header h1 {
+      font-size: 20px;
+      color: #e94560;
+      margin-bottom: 4px;
+    }
+    
+    .header .version {
+      font-size: 11px;
+      color: #9ca3af;
+    }
+    
+    .header .credits {
+      font-size: 10px;
+      color: #6b7280;
+      margin-top: 4px;
+    }
+    
+    /* Status Card */
+    .status-card {
+      background: rgba(0, 217, 165, 0.1);
+      border: 1px solid #00d9a5;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+    
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+      font-size: 12px;
+    }
+    
+    .status-row:last-child { margin-bottom: 0; }
+    
+    .status-icon {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: bold;
+    }
+    
+    .status-icon.online { background: #00d9a5; color: #1a1a2e; }
+    .status-icon.warning { background: #facc15; color: #1a1a2e; }
+    .status-icon.error { background: #dc2626; color: white; }
+    
+    .status-label { color: #9ca3af; min-width: 80px; }
+    .status-value { color: #ffffff; font-weight: 500; word-break: break-all; }
+    
+    /* Config Section */
+    .config-section {
+      background: rgba(15, 52, 96, 0.5);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+    
+    .config-section h3 {
+      font-size: 13px;
+      color: #00d9a5;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    
+    .path-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    
+    .path-row input {
+      flex: 1;
+      background: #0f3460;
+      border: 1px solid #16213e;
+      border-radius: 4px;
+      padding: 6px 8px;
+      color: #ffffff;
+      font-size: 11px;
+      font-family: 'Courier New', monospace;
+    }
+    
+    .path-row input:focus {
+      outline: none;
+      border-color: #00d9a5;
+    }
+    
+    /* Buttons */
+    .btn {
+      padding: 6px 12px;
+      border: none;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    
+    .btn-primary {
+      background: #e94560;
+      color: white;
+    }
+    
+    .btn-primary:hover {
+      background: #dc2626;
+      transform: translateY(-1px);
+    }
+    
+    .btn-secondary {
+      background: #0f3460;
+      color: #00d9a5;
+      border: 1px solid #00d9a5;
+    }
+    
+    .btn-secondary:hover {
+      background: #16213e;
+    }
+    
+    .btn-small {
+      padding: 4px 8px;
+      font-size: 11px;
+    }
+    
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+    
+    .button-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    
+    .button-row .btn { flex: 1; min-width: 90px; }
+    
+    /* History Section */
+    .history-section {
+      background: rgba(15, 52, 96, 0.5);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+    
+    .history-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    
+    .history-header h3 {
+      font-size: 13px;
+      color: #00d9a5;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    
+    .history-list {
+      max-height: 150px;
+      overflow-y: auto;
+      font-size: 11px;
+    }
+    
+    .history-item {
+      background: #0f3460;
+      padding: 6px 8px;
+      border-radius: 4px;
+      margin-bottom: 4px;
+      border-left: 3px solid #00d9a5;
+    }
+    
+    .history-item.error { border-left-color: #dc2626; }
+    .history-item.extension { border-left-color: #60a5fa; }
+    
+    .history-filename {
+      font-weight: 600;
+      color: #ffffff;
+      word-break: break-all;
+    }
+    
+    .history-meta {
+      color: #9ca3af;
+      font-size: 10px;
+      margin-top: 2px;
+    }
+    
+    .history-empty {
+      text-align: center;
+      color: #6b7280;
+      padding: 20px;
+      font-style: italic;
+    }
+    
+    /* Footer */
+    .footer {
+      text-align: center;
+      padding-top: 12px;
+      border-top: 1px solid #0f3460;
+      font-size: 10px;
+      color: #6b7280;
+    }
+    
+    .footer a {
+      color: #00d9a5;
+      text-decoration: none;
+    }
+    
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #0f3460; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb { background: #16213e; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #1a1a2e; }
+    
+    /* Animations */
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+    
+    .pulse { animation: pulse 2s infinite; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <h1>🍳 Kitchen Flow Bridge</h1>
+      <div class="version">v<span id="appVersion">2.0.0</span></div>
+      <div class="credits">CLB Studio - Celso Luiz</div>
+    </header>
+
+    <!-- Status -->
+    <div class="status-card">
+      <div class="status-row">
+        <span class="status-icon online pulse">✓</span>
+        <span class="status-label">Status:</span>
+        <span class="status-value" id="statusText">Conectando...</span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">📁 Pasta:</span>
+        <span class="status-value" id="downloadPath">Carregando...</span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">🌐 Backend:</span>
+        <span class="status-value" id="backendUrl">Carregando...</span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">🆔 Bridge ID:</span>
+        <span class="status-value" id="bridgeId">Carregando...</span>
+      </div>
+    </div>
+
+    <!-- Configuração -->
+    <div class="config-section">
+      <h3>⚙️ Configuração</h3>
+      <div class="path-row">
+        <input type="text" id="pathInput" placeholder="Caminho da pasta..." readonly>
+        <button class="btn btn-secondary btn-small" id="changePathBtn">Alterar</button>
+      </div>
+      <div class="button-row">
+        <button class="btn btn-secondary" id="reloadMenuBtn">🔄 Recarregar Cardápio</button>
+        <button class="btn btn-secondary" id="testBtn">🧪 Testar Captura</button>
+      </div>
+    </div>
+
+    <!-- Histórico -->
+    <div class="history-section">
+      <div class="history-header">
+        <h3>📋 Histórico</h3>
+        <button class="btn btn-secondary btn-small" id="clearHistoryBtn">Limpar</button>
+      </div>
+      <div class="history-list" id="historyList">
+        <div class="history-empty">Nenhuma captura ainda</div>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <p>Monitorando downloads do Saipos • <a href="#" id="licenseLink">Licença</a></p>
+    </footer>
+  </div>
+
   <script>
-    if (window.bridgeAPI) {
-      bridgeAPI.getConfig().then(cfg => {
-        document.getElementById('status').innerHTML = 
-          `✅ Online<br>📁 ${cfg.DOWNLOAD_PATH}<br>🌐 ${cfg.BACKEND_URL}`;
+    // Elementos DOM
+    const els = {
+      statusText: document.getElementById('statusText'),
+      downloadPath: document.getElementById('downloadPath'),
+      backendUrl: document.getElementById('backendUrl'),
+      bridgeId: document.getElementById('bridgeId'),
+      appVersion: document.getElementById('appVersion'),
+      pathInput: document.getElementById('pathInput'),
+      changePathBtn: document.getElementById('changePathBtn'),
+      reloadMenuBtn: document.getElementById('reloadMenuBtn'),
+      testBtn: document.getElementById('testBtn'),
+      clearHistoryBtn: document.getElementById('clearHistoryBtn'),
+      historyList: document.getElementById('historyList'),
+      licenseLink: document.getElementById('licenseLink')
+    };
+
+    // Estado local
+    let currentConfig = null;
+    let currentHistory = [];
+
+    // Inicialização
+    async function init() {
+      if (!window.bridgeAPI) {
+        els.statusText.textContent = '❌ API não disponível';
+        els.statusText.closest('.status-row').querySelector('.status-icon').className = 'status-icon error';
+        return;
+      }
+
+      // Carregar configurações
+      try {
+        const config = await window.bridgeAPI.getConfig();
+        currentConfig = config;
+        updateUI(config);
+      } catch (e) {
+        console.error('Erro ao carregar config:', e);
+        els.statusText.textContent = '⚠️ Erro de conexão';
+      }
+
+      // Carregar histórico
+      await loadHistory();
+
+      // Configurar listeners
+      setupEventListeners();
+      setupBridgeListeners();
+
+      // Verificar licença
+      checkLicense();
+    }
+
+    // Atualizar UI com config
+    function updateUI(config) {
+      els.statusText.textContent = '✅ Online';
+      els.statusText.closest('.status-row').querySelector('.status-icon').className = 'status-icon online';
+      els.downloadPath.textContent = config.DOWNLOAD_PATH || 'Não configurado';
+      els.backendUrl.textContent = new URL(config.BACKEND_URL).hostname;
+      els.bridgeId.textContent = config.bridgeId || 'N/A';
+      els.appVersion.textContent = config.version || '2.0.0';
+      els.pathInput.value = config.DOWNLOAD_PATH || '';
+    }
+
+    // Carregar histórico
+    async function loadHistory() {
+      try {
+        currentHistory = await window.bridgeAPI.getHistory();
+        renderHistory();
+      } catch (e) {
+        console.error('Erro ao carregar histórico:', e);
+      }
+    }
+
+    // Renderizar histórico
+    function renderHistory() {
+      if (currentHistory.length === 0) {
+        els.historyList.innerHTML = '<div class="history-empty">Nenhuma captura ainda</div>';
+        return;
+      }
+
+      const html = currentHistory.slice(0, 20).map(item => {
+        const date = new Date(item.timestamp);
+        const timeStr = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        const icon = item.status === 'success' ? '✅' : item.status === 'extension' ? '🔗' : '❌';
+        const source = item.status === 'extension' ? ' [Extensão]' : '';
+        
+        return `
+          <div class="history-item ${item.status}">
+            <div class="history-filename">${icon} ${escapeHtml(item.filename)}${source}</div>
+            <div class="history-meta">🕐 ${timeStr} • ${item.message || item.status}</div>
+          </div>
+        `;
+      }).join('');
+
+      els.historyList.innerHTML = html;
+    }
+
+    // Configurar listeners de botão
+    function setupEventListeners() {
+      // Alterar pasta
+      els.changePathBtn.addEventListener('click', async () => {
+        try {
+          // Em produção, usaria dialog nativo via IPC
+          // Aqui simulamos com prompt para desenvolvimento
+          const newPath = prompt('Digite o novo caminho da pasta:', currentConfig?.DOWNLOAD_PATH);
+          
+          if (newPath && newPath.trim()) {
+            const result = await window.bridgeAPI.setDownloadPath(newPath.trim());
+            if (result.success) {
+              els.downloadPath.textContent = newPath.trim();
+              els.pathInput.value = newPath.trim();
+              showToast('✅ Pasta atualizada!', 'success');
+            }
+          }
+        } catch (e) {
+          showToast('❌ Erro: ' + e.message, 'error');
+        }
+      });
+
+      // Recarregar cardápio
+      els.reloadMenuBtn.addEventListener('click', async () => {
+        try {
+          const result = await window.bridgeAPI.reloadMenu();
+          showToast(
+            result.success ? `✅ ${result.count} pratos carregados` : '❌ Falha ao carregar',
+            result.success ? 'success' : 'error'
+          );
+        } catch (e) {
+          showToast('❌ Erro: ' + e.message, 'error');
+        }
+      });
+
+      // Testar captura
+      els.testBtn.addEventListener('click', async () => {
+        try {
+          await window.bridgeAPI.triggerTest();
+          showToast('🧪 Arquivo de teste criado!', 'info');
+          await loadHistory();
+        } catch (e) {
+          showToast('❌ Erro: ' + e.message, 'error');
+        }
+      });
+
+      // Limpar histórico
+      els.clearHistoryBtn.addEventListener('click', async () => {
+        if (confirm('Limpar todo o histórico?')) {
+          await window.bridgeAPI.clearHistory();
+          currentHistory = [];
+          renderHistory();
+          showToast('🧹 Histórico limpo', 'info');
+        }
+      });
+
+      // Link de licença
+      els.licenseLink.addEventListener('click', (e) => {
+        e.preventDefault();
+        checkLicense();
       });
     }
+
+    // Configurar listeners do bridgeAPI
+    function setupBridgeListeners() {
+      // Histórico atualizado
+      window.bridgeAPI.onHistoryUpdated((history) => {
+        currentHistory = history;
+        renderHistory();
+      });
+
+      // Config atualizada
+      window.bridgeAPI.onConfigUpdated((config) => {
+        if (config.downloadPath) {
+          els.downloadPath.textContent = config.downloadPath;
+          els.pathInput.value = config.downloadPath;
+        }
+      });
+
+      // Arquivo detectado
+      window.bridgeAPI.onFileDetected((data) => {
+        console.log('📄 Arquivo detectado:', data);
+        loadHistory(); // Atualiza histórico
+      });
+    }
+
+    // Verificar licença
+    async function checkLicense() {
+      try {
+        const status = await window.bridgeAPI.getLicenseStatus();
+        if (status.type === 'trial') {
+          showToast(`🧪 Trial: ${status.daysLeft} dias restantes`, 'warning');
+        } else if (!status.valid) {
+          showToast('🔒 Licença expirada', 'error');
+        }
+      } catch (e) {
+        console.log('Não foi possível verificar licença:', e.message);
+      }
+    }
+
+    // Mostrar toast
+    function showToast(message, type = 'info') {
+      // Cria elemento temporário
+      const toast = document.createElement('div');
+      toast.textContent = message;
+      toast.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: ${type === 'success' ? '#00d9a5' : type === 'error' ? '#dc2626' : type === 'warning' ? '#facc15' : '#e94560'};
+        color: ${type === 'warning' ? '#1a1a2e' : 'white'};
+        padding: 10px 20px;
+        border-radius: 8px;
+        font-size: 12px;
+        font-weight: 600;
+        z-index: 1000;
+        animation: slideUp 0.3s ease;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      `;
+      
+      document.body.appendChild(toast);
+      
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transition = 'opacity 0.3s';
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+
+    // Escape HTML
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Adicionar animação CSS
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes slideUp {
+        from { opacity: 0; transform: translate(-50%, 20px); }
+        to { opacity: 1; transform: translate(-50%, 0); }
+      }
+    `;
+    document.head.appendChild(style);
+
+    // Iniciar
+    document.addEventListener('DOMContentLoaded', init);
   </script>
-</body></html>
+</body>
+</html>
