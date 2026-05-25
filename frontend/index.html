@@ -12,6 +12,10 @@
   <meta name="theme-color" content="#1a1a2e">
   <meta name="application-name" content="Kitchen Flow">
   
+  <!-- ← NOVO: Fullscreen emergencial para Chrome -->
+  <meta name="fullscreen" content="true">
+  <meta name="x5-fullscreen" content="true">
+  
   <!-- Performance -->
   <link rel="preconnect" href="https://kitchen-flow-swq2.onrender.com">
   <link rel="dns-prefetch" href="https://kitchen-flow-swq2.onrender.com">
@@ -20,17 +24,30 @@
   <link rel="stylesheet" href="style.css">
   <link rel="icon" type="image/png" href="fazenda.png">
   
-  <!-- Manifest para PWA (opcional - criar arquivo manifest.json) -->
+  <!-- Manifest para PWA -->
   <link rel="manifest" href="manifest.json">
   
-  <!-- Script de registro do Service Worker (opcional) -->
+  <!-- ← NOVO: Script para fullscreen emergencial -->
   <script>
-    // Registrar service worker para offline cache (se existir)
+    // Tentar entrar em fullscreen se não for PWA instalado
+    function tryFullscreen() {
+      if (window.matchMedia('(display-mode: standalone)').matches) return; // Já é PWA
+      if (document.fullscreenElement) return;
+      
+      const elem = document.documentElement;
+      if (elem.requestFullscreen) elem.requestFullscreen().catch(() => {});
+      else if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen().catch(() => {});
+      else if (elem.msRequestFullscreen) elem.msRequestFullscreen().catch(() => {});
+    }
+    
+    // Registrar service worker para offline cache
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.js').catch(err => {
           console.log('SW registration failed:', err);
         });
+        // Tentar fullscreen após load
+        setTimeout(tryFullscreen, 2000);
       });
     }
     
@@ -54,6 +71,15 @@
     <div class="loading-spinner"></div>
     <p>Conectando ao Kitchen Flow...</p>
     <small id="loadingStatus">Aguardando rede...</small>
+  </div>
+
+  <!-- ← NOVO: Banner de Cancelamento (fixo no topo, oculto por padrão) -->
+  <div id="cancelBanner" class="cancel-banner hidden" role="alert" aria-live="assertive">
+    <div class="cancel-banner-content">
+      <span class="cancel-icon">🚫</span>
+      <span id="cancelMessage" class="cancel-message">CANCELAMENTO: Mesa X • Item Y</span>
+      <button id="cancelClose" class="cancel-close" aria-label="Fechar aviso">✕</button>
+    </div>
   </div>
 
   <header class="app-header">
@@ -108,7 +134,8 @@
     <section id="tab-concluidos" class="tab-content" role="tabpanel" aria-labelledby="tab-concluidos-btn" hidden>
       <div id="completed" class="completed-list" aria-live="polite">
         <div class="empty">
-          <span class="-icon" aria-hidden="true">✨</span>
+          <!-- ← CORREÇÃO: class="-icon" → class="empty-icon" -->
+          <span class="empty-icon" aria-hidden="true">✨</span>
           <p>Nenhum concluído</p>
           <small>Pedidos finalizados aparecem aqui</small>
         </div>
@@ -148,29 +175,29 @@
     <small class="config-note">Alterações exigem recarregar a página</small>
   </div>
   
-  <button id="openConfig" class="config-toggle" aria-label="Abrir configurações" title="Configurações">
+  <!-- ← NOVO: Engrenagem mais discreta (classe atualizada) -->
+  <button id="openConfig" class="config-toggle config-toggle-discreet" aria-label="Abrir configurações" title="Configurações">
     ⚙️
   </button>
 
   <!-- Hidden audio elements for notifications -->
   <audio id="soundNew" preload="auto">
     <source src="sounds/new-order.mp3" type="audio/mpeg">
-    <!-- Fallback: beep via Web Audio API se arquivo não carregar -->
   </audio>
   <audio id="soundDone" preload="auto">
     <source src="sounds/order-done.mp3" type="audio/mpeg">
   </audio>
+  <!-- ← REMOVIDO: soundCancel não é mais necessário (usamos Web Audio API puro no app.js) -->
 
   <!-- App Script -->
   <script src="app.js"></script>
   
   <!-- Fallback para tablets sem suporte a dialog -->
   <script>
-    // Polyfill mínimo para <dialog> em browsers antigos
     if (typeof HTMLDialogElement === 'undefined') {
       console.log('⚠️ Dialog não suportado, usando fallback');
       document.querySelectorAll('dialog').forEach(d => {
-        d.show = function() { this.style.display = 'block'; };
+        d.show = function() { this.style.display = 'flex'; };
         d.close = function() { this.style.display = 'none'; };
       });
     }
