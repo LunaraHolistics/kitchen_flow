@@ -1,5 +1,5 @@
 const LicenseManager = require('./license-manager');
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, Notification } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, Notification, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
@@ -7,7 +7,6 @@ const moment = require('moment');
 const Watcher = require('./watcher');
 const http = require('http');
 const dotenv = require('dotenv');
-const extensionPath = path.join(process.resourcesPath, 'browser-extension');
 
 // ============================================================================
 // CARREGAR .env CORRETAMENTE (Com fallback para dev e produção)
@@ -38,7 +37,7 @@ loadEnvConfig();
 // ============================================================================
 const APP_META = {
   name: 'Kitchen Flow Bridge',
-  version: '2.0.0',
+  version: '2.1.2',
   author: 'CLB Studio - by Celso Luiz',
   description: 'Bridge para monitorar downloads do Saipos'
 };
@@ -120,7 +119,7 @@ function addToHistory(filename, status, filePath, message = '') {
   const entry = {
     id: Date.now() + Math.random().toString(36).substr(2, 5),
     filename,
-    status, // 'success' | 'error' | 'extension'
+    status,
     filePath,
     message,
     timestamp: new Date().toISOString(),
@@ -129,12 +128,10 @@ function addToHistory(filename, status, filePath, message = '') {
   
   downloadHistory.unshift(entry);
   
-  // Limitar histórico
   if (downloadHistory.length > MAX_HISTORY_ITEMS) {
     downloadHistory = downloadHistory.slice(0, MAX_HISTORY_ITEMS);
   }
   
-  // Notificar janela principal se existir
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('history-updated', downloadHistory);
   }
@@ -164,7 +161,14 @@ function log(level, msg, data = null) {
 }
 
 function ensureBackupDir() {
-  if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
+  if (!fs.existsSync(BACKUP_DIR)) {
+    try {
+      fs.mkdirSync(BACKUP_DIR, { recursive: true });
+      console.log(`📁 Pasta de backup criada: ${BACKUP_DIR}`);
+    } catch (e) {
+      console.error('❌ Falha ao criar pasta de backup:', e.message);
+    }
+  }
 }
 
 // Limpeza automática de backups antigos (roda a cada hora)
@@ -306,7 +310,7 @@ function generateRandomFallback() {
 }
 
 // ============================================================================
-// HANDLER PRINCIPAL
+// HANDLER PRINCIPAL (COM TRATAMENTO DE ERRO ENOENT E RETRY)
 // ============================================================================
 async function handleNewFile(originalPath, source = 'watcher') {
   const fileName = path.basename(originalPath);
@@ -316,15 +320,50 @@ async function handleNewFile(originalPath, source = 'watcher') {
   const backupPath = path.join(BACKUP_DIR, `${moment().format('YYYYMMDD_HHmmss')}_${fileName}`);
   
   try {
-    // Copiar para backup
-    fs.copyFileSync(originalPath, backupPath);
-    log('INFO', `📦 Backup criado: ${backupPath}`);
+    // ← CORREÇÃO #4: Verificar se arquivo existe ANTES de processar
+    if (!fs.existsSync(originalPath)) {
+      const errorMsg = 'Arquivo não encontrado - possível bloqueio por antivírus ou deletado pelo Saipos';
+      console.warn(`⚠️ ${errorMsg}: ${originalPath}`);
+      addToHistory(fileName, 'error', originalPath, errorMsg);
+      showNotification('Arquivo não processado', 'Antivírus pode ter bloqueado o arquivo', 'warning');
+      return;
+    }
     
-    // Parsear arquivo
+    // ← CORREÇÃO #4: Retry logic para copiar arquivo (antivírus pode travar acesso)
+    let copySuccess = false;
+    let copyError = null;
+    const maxRetries = 3;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        fs.copyFileSync(originalPath, backupPath);
+        copySuccess = true;
+        log('INFO', `📦 Backup criado: ${backupPath} (tentativa ${attempt})`);
+        break;
+      } catch (err) {
+        copyError = err;
+        console.warn(`⚠️ Tentativa ${attempt}/${maxRetries} falhou ao copiar: ${err.message}`);
+        
+        if (attempt < maxRetries) {
+          // Aguardar antes de retry
+          await new Promise(resolve => setTimeout(resolve, 300));
+        }
+      }
+    }
+    
+    if (!copySuccess) {
+      const errorMsg = `Falha ao criar backup após ${maxRetries} tentativas: ${copyError?.message || 'Erro desconhecido'}`;
+      log('ERROR', errorMsg);
+      addToHistory(fileName, 'error', originalPath, errorMsg);
+      showNotification('Erro ao processar pedido', 'Falha ao salvar backup', 'error');
+      return;
+    }
+    
+    // Parsear arquivo de backup (não o original)
     const parsedData = parseSaiposFile(backupPath);
     if (!parsedData) {
       log('ERROR', 'Falha ao extrair dados do pedido');
-      addToHistory(fileName, 'error', originalPath, 'Falha ao parsear');
+      addToHistory(fileName, 'error', originalPath, 'Falha ao parsear conteúdo');
       return;
     }
     
@@ -332,25 +371,36 @@ async function handleNewFile(originalPath, source = 'watcher') {
     
     // Gerar ordem
     const orderData = generateOrderFromParsedData(parsedData);
-    await sendOrderToBackend(originalPath, orderData);
+    await sendOrderToBackend(backupPath, orderData);
     
     // Notificar sucesso
     showNotification('Pedido Capturado!', `📋 ${orderData.mesa} • ${parsedData.garcom} • ${orderData.itens.length} componentes`);
     addToHistory(fileName, 'success', originalPath, `${orderData.mesa} • ${orderData.itens.length} itens`);
     
-    // Remover original após processamento (opcional)
-    try { 
-      if (fs.existsSync(originalPath) && source === 'watcher') {
+    // Remover original APÓS processamento bem-sucedido (apenas se veio do watcher)
+    if (source === 'watcher' && fs.existsSync(originalPath)) {
+      try {
         fs.unlinkSync(originalPath);
         log('INFO', `🗑️ Arquivo original removido: ${fileName}`);
+      } catch (delErr) {
+        log('WARN', `Não foi possível remover original: ${delErr.message}`);
+        // Não falhar o processo se não conseguir deletar
       }
-    } catch(e) {
-      log('WARN', `Não foi possível remover original: ${e.message}`);
     }
     
-  } catch(error) {
-    log('ERROR', `Falha no pipeline: ${error.message}`);
-    addToHistory(fileName, 'error', originalPath, error.message);
+  } catch (error) {
+    // ← CORREÇÃO #4: Log detalhado para diagnóstico de antivírus
+    const errorCode = error.code || 'UNKNOWN';
+    const isAntivirusRelated = ['ENOENT', 'EPERM', 'EACCES', 'EBUSY'].includes(errorCode);
+    
+    log('ERROR', `Falha no pipeline: ${error.message} (código: ${errorCode})`);
+    
+    if (isAntivirusRelated) {
+      console.error('🛡️ Possível interferência de antivírus detectada!');
+      console.error('💡 Sugestão: Adicionar exclusão para pasta de downloads e extensão .saiposprt');
+    }
+    
+    addToHistory(fileName, 'error', originalPath, `${error.message} [${errorCode}]`);
     showNotification('Erro ao processar pedido', error.message, 'error');
   }
 }
@@ -365,25 +415,30 @@ async function sendOrderToBackend(filePath, mockData) {
     mockData,
     bridgeId: BRIDGE_ID,
     timestamp: moment().toISOString(),
-    parserVersion: '2.1'
+    parserVersion: '2.1.2'
   };
   
-  const headers = { 'Content-Type': 'application/json', 'User-Agent': 'KitchenFlowBridge/2.1' };
+  const headers = { 'Content-Type': 'application/json', 'User-Agent': 'KitchenFlowBridge/2.1.2' };
   if (CONFIG.API_KEY) headers['X-API-Key'] = CONFIG.API_KEY;
 
-  const response = await fetch(url, { 
-    method: 'POST', 
-    headers, 
-    body: JSON.stringify(payload),
-    timeout: 10000
-  });
-  
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`HTTP ${response.status}: ${errorText}`);
+  try {
+    const response = await fetch(url, { 
+      method: 'POST', 
+      headers, 
+      body: JSON.stringify(payload),
+      timeout: 10000
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+    
+    return response.json();
+  } catch (err) {
+    console.error('❌ Falha ao enviar para backend:', err.message);
+    throw err;
   }
-  
-  return response.json();
 }
 
 // ============================================================================
@@ -437,7 +492,6 @@ function createWindow() {
   
   mainWindow.loadFile('index.html');
   
-  // Habilitar DevTools apenas em modo desenvolvimento
   if (process.argv.includes('--dev') || process.env.NODE_ENV === 'development') {
     mainWindow.show();
     mainWindow.webContents.openDevTools({ mode: 'detach' });
@@ -452,7 +506,6 @@ function createWindow() {
   });
   
   mainWindow.on('ready-to-show', () => {
-    // Envia configurações iniciais para o frontend
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('config-loaded', {
         downloadPath: CONFIG.DOWNLOAD_PATH,
@@ -522,7 +575,6 @@ function createTray() {
     {
       label: '📁 Alterar Pasta de Monitoramento...',
       click: async () => {
-        const { dialog } = require('electron');
         const result = await dialog.showOpenDialog(mainWindow || undefined, {
           properties: ['openDirectory'],
           title: 'Selecione a pasta para monitorar downloads',
@@ -536,14 +588,29 @@ function createTray() {
         }
       }
     },
+    {
+      label: '🛡️ Configurar Antivírus...',
+      click: () => {
+        dialog.showMessageBox({
+          type: 'info',
+          title: 'Configurar Antivírus',
+          message: 'Para evitar bloqueios, adicione estas exclusões no seu antivírus:',
+          detail: `1. Pasta: ${CONFIG.DOWNLOAD_PATH}\n2. Extensão: .saiposprt\n3. Processo: Kitchen Flow Bridge`,
+          buttons: ['OK', 'Copiar Instruções']
+        }).then(result => {
+          if (result.response === 1) {
+            const text = `Exclusões para Kitchen Flow Bridge:\n- Pasta: ${CONFIG.DOWNLOAD_PATH}\n- Extensão: .saiposprt\n- Processo: Kitchen Flow Bridge`;
+            require('electron').clipboard.writeText(text);
+            showNotification('Instruções copiadas', 'Cole nas configurações do seu antivírus');
+          }
+        });
+      }
+    },
     { type: 'separator' },
     { label: `📁 Monitora: ${path.basename(CONFIG.DOWNLOAD_PATH)}`, enabled: false },
     { label: `💾 Backup: ${path.basename(BACKUP_DIR)}`, enabled: false },
     { label: `🌐 Backend: ${new URL(CONFIG.BACKEND_URL).hostname}`, enabled: false },
-    { 
-      label: `📖 Cardápio: ${menuSource === 'external' ? 'Externo' : 'Embutido'}`, 
-      enabled: false 
-    },
+    { label: `📖 Cardápio: ${menuSource === 'external' ? 'Externo' : 'Embutido'}`, enabled: false },
     { type: 'separator' },
     {
       label: '🚪 Sair',
@@ -574,16 +641,19 @@ function createTray() {
 // ATUALIZAR CAMINHO DE DOWNLOAD (COM PERSISTÊNCIA)
 // ============================================================================
 async function updateDownloadPath(newPath) {
-  // Validar pasta
   if (!fs.existsSync(newPath)) {
-    fs.mkdirSync(newPath, { recursive: true });
+    try {
+      fs.mkdirSync(newPath, { recursive: true });
+      log('INFO', `📁 Pasta criada: ${newPath}`);
+    } catch (e) {
+      log('ERROR', `Falha ao criar pasta: ${e.message}`);
+      return { success: false, error: e.message };
+    }
   }
   
-  // Atualizar CONFIG em memória
   CONFIG.DOWNLOAD_PATH = newPath;
   process.env.KFM_DOWNLOAD_PATH = newPath;
   
-  // Atualizar .env (tentar múltiplos locais)
   const possibleEnvPaths = [
     path.join(process.resourcesPath, '.env'),
     path.join(__dirname, '.env'),
@@ -604,16 +674,10 @@ async function updateDownloadPath(newPath) {
     }
   }
   
-  // Reiniciar watcher com nova pasta
-  if (watcher) {
-    watcher.stop();
-  }
+  if (watcher) watcher.stop();
   startWatcher();
-  
-  // Atualizar tray menu
   createTray();
   
-  // Notificar frontend
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('config-updated', { downloadPath: newPath });
   }
@@ -628,10 +692,14 @@ async function updateDownloadPath(newPath) {
 function startWatcher() {
   if (!fs.existsSync(CONFIG.DOWNLOAD_PATH)) {
     log('WARN', `Pasta não existe: ${CONFIG.DOWNLOAD_PATH}. Criando...`);
-    fs.mkdirSync(CONFIG.DOWNLOAD_PATH, { recursive: true });
+    try {
+      fs.mkdirSync(CONFIG.DOWNLOAD_PATH, { recursive: true });
+    } catch (e) {
+      log('ERROR', `Falha ao criar pasta: ${e.message}`);
+    }
   }
   watcher = new Watcher(CONFIG.DOWNLOAD_PATH, { onNewFile: handleNewFile });
-  log('INFO', `✅ V2.1 Ativo | Monitorando: ${CONFIG.DOWNLOAD_PATH}`);
+  log('INFO', `✅ V2.1.2 Ativo | Monitorando: ${CONFIG.DOWNLOAD_PATH}`);
 }
 
 // ============================================================================
@@ -639,7 +707,6 @@ function startWatcher() {
 // ============================================================================
 function startHttpServer() {
   httpServer = http.createServer(async (req, res) => {
-    // Permitir CORS para extensão
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -650,7 +717,6 @@ function startHttpServer() {
       return;
     }
     
-    // Endpoint: POST /api/download (recebe captura da extensão)
     if (req.url === '/api/download' && req.method === 'POST') {
       let body = '';
       
@@ -663,7 +729,6 @@ function startHttpServer() {
           
           log('INFO', `📥 Extensão capturou: ${filename}`);
           
-          // Validar e processar arquivo
           if (filePath && fs.existsSync(filePath)) {
             await handleNewFile(filePath, 'extension');
             addToHistory(filename, 'extension', filePath, 'Capturado pela extensão');
@@ -682,18 +747,11 @@ function startHttpServer() {
         }
       });
       
-    } 
-    // Endpoint: GET /api/history (retorna histórico para extensão)
-    else if (req.url === '/api/history' && req.method === 'GET') {
+    } else if (req.url === '/api/history' && req.method === 'GET') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ 
-        success: true, 
-        history: getHistory().slice(0, 50) // Últimos 50
-      }));
+      res.end(JSON.stringify({ success: true, history: getHistory().slice(0, 50) }));
       
-    }
-    // Endpoint: GET /api/status (health check)
-    else if (req.url === '/api/status' && req.method === 'GET') {
+    } else if (req.url === '/api/status' && req.method === 'GET') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ 
         success: true, 
@@ -703,9 +761,7 @@ function startHttpServer() {
         timestamp: new Date().toISOString()
       }));
       
-    }
-    // 404 para outras rotas
-    else {
+    } else {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       res.end('Kitchen Flow Bridge API - Endpoint not found');
     }
@@ -732,7 +788,6 @@ function startHttpServer() {
 // IPC HANDLERS
 // ============================================================================
 
-// Configurações
 ipcMain.handle('get-config', () => ({ 
   ...CONFIG, 
   bridgeId: BRIDGE_ID,
@@ -740,7 +795,6 @@ ipcMain.handle('get-config', () => ({
   version: APP_META.version
 }));
 
-// Status do sistema
 ipcMain.handle('get-status', () => ({
   watching: watcher?.isActive || false,
   backend: CONFIG.BACKEND_URL,
@@ -751,13 +805,9 @@ ipcMain.handle('get-status', () => ({
   httpPort: httpServer?.address()?.port || 4545
 }));
 
-// Trigger de teste
 ipcMain.handle('trigger-test', () => watcher?.triggerTest?.());
-
-// Recarregar cardápio
 ipcMain.handle('reload-menu', () => reloadMenuMap());
 
-// Info do cardápio
 ipcMain.handle('get-menu-info', () => ({
   source: menuSource,
   path: menuSource === 'external' ? MENU_MAP_EXTERNAL : MENU_MAP_BUNDLED,
@@ -765,7 +815,6 @@ ipcMain.handle('get-menu-info', () => ({
   lastLoaded: new Date().toISOString()
 }));
 
-// ========== HISTÓRICO ==========
 ipcMain.handle('get-history', () => getHistory());
 
 ipcMain.handle('clear-history', () => {
@@ -773,21 +822,44 @@ ipcMain.handle('clear-history', () => {
   return { success: true };
 });
 
-// ========== ALTERAR PASTA DE DOWNLOAD ==========
 ipcMain.handle('set-download-path', async (event, newPath) => {
   return await updateDownloadPath(newPath);
 });
 
-// ========== LICENÇA ==========
+// ← NOVO: Endpoint para diagnóstico de antivírus
+ipcMain.handle('check-antivirus-exclusions', async () => {
+  const downloadPath = CONFIG.DOWNLOAD_PATH;
+  
+  try {
+    // Testar escrita na pasta
+    const testFile = path.join(downloadPath, `.kfm_test_${Date.now()}.tmp`);
+    fs.writeFileSync(testFile, 'test');
+    fs.unlinkSync(testFile);
+    
+    return {
+      canWrite: true,
+      path: downloadPath,
+      message: 'Acesso à pasta OK'
+    };
+  } catch (e) {
+    return {
+      canWrite: false,
+      path: downloadPath,
+      error: e.message,
+      code: e.code,
+      message: 'Possível bloqueio por antivírus'
+    };
+  }
+});
+
 ipcMain.handle('get-lic-status', () => LicenseManager.checkStatus());
 ipcMain.handle('activate-license', (event, key) => LicenseManager.activate(key));
 ipcMain.on('restart-app', () => { app.relaunch(); app.exit(0); });
 
 // ============================================================================
-// INICIALIZAÇÃO DO APP (COM VERIFICAÇÃO DE LICENÇA)
+// INICIALIZAÇÃO DO APP
 // ============================================================================
 app.whenReady().then(() => {
-  // Evitar múltiplas instâncias
   const gotTheLock = app.requestSingleInstanceLock();
   if (!gotTheLock) {
     console.log('⚠️ Outra instância já está rodando. Encerrando.');
@@ -803,7 +875,6 @@ app.whenReady().then(() => {
     }
   });
   
-  // 🔐 VERIFICAÇÃO DE LICENÇA (Trial 7 dias)
   const licStatus = LicenseManager.checkStatus();
   console.log(`🔐 Status da Licença: ${licStatus.type} | ID: ${licStatus.machineId}`);
   
@@ -814,48 +885,35 @@ app.whenReady().then(() => {
     return;
   }
   
-  // Notificar se em trial
   if (licStatus.type === 'trial') {
     log('INFO', `🧪 Modo Teste: ${licStatus.daysLeft} dias restantes`);
     showNotification(`Teste: ${licStatus.daysLeft} dias restantes`, 'Entre em contato para ativar.', 'info');
   }
   
-  // ✅ Licença válida → inicia app normalmente
-  log('INFO', '🚀 Kitchen Flow Bridge V2.1 iniciando...');
+  log('INFO', '🚀 Kitchen Flow Bridge V2.1.2 iniciando...');
   
-  // Iniciar componentes
   createTray();
   createWindow();
   startWatcher();
-  startHttpServer(); // ← NOVO: Servidor para extensão
+  startHttpServer();
   
-  showNotification('Kitchen Flow V2.1', 'Parser Real + Extensão • Pronto para pedidos');
+  showNotification('Kitchen Flow V2.1.2', 'Parser Real + Extensão + Antivírus Fix • Pronto');
 });
 
 // ============================================================================
 // LIFECYCLE
 // ============================================================================
-app.on('window-all-closed', () => {
-  // Mantém app rodando no tray (comportamento padrão para apps de bandeja)
-});
+app.on('window-all-closed', () => {});
 
 app.on('before-quit', () => {
   isQuitting = true;
-  
-  // Parar watcher
   if (watcher) watcher.stop();
-  
-  // Fechar servidor HTTP
   if (httpServer) {
-    httpServer.close(() => {
-      log('INFO', '🔌 Servidor HTTP fechado');
-    });
+    httpServer.close(() => log('INFO', '🔌 Servidor HTTP fechado'));
   }
-  
   log('INFO', '🛑 Encerrando Kitchen Flow Bridge...');
 });
 
-// Lidar com SIGINT (Ctrl+C) em desenvolvimento
 process.on('SIGINT', () => {
   log('INFO', '🛑 Recebido SIGINT, encerrando...');
   app.quit();

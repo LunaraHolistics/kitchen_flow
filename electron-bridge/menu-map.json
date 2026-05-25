@@ -1,16 +1,17 @@
 {
   "meta": {
-    "version": "2.1",
+    "version": "2.1.1",
     "restaurante": "Na Fazenda Restaurante e Eventos",
-    "ultima_atualizacao": "2026-05-14",
-    "nota": "Chaves em minúsculas para match fuzzy com parser Saipos"
+    "ultima_atualizacao": "2026-05-20",
+    "nota": "Chaves em minúsculas para match fuzzy com parser Saipos. Bebidas mapeadas para setor 'Bebidas' (não aparecem na cozinha)."
   },
   "setores": {
     "Fogão": "Pratos quentes, grelhados, molhos, arroz, feijão",
     "Fritadeira": "Itens empanados, frituras, batata, mandioca",
     "Saladas": "Saladas frescas, vinagrete, folhas, tomate",
     "Frios": "Acompanhamentos frios, farofa, molhos, pães, queijos",
-    "Sobremesas": "Sobremesas e finalizações"
+    "Sobremesas": "Sobremesas e finalizações",
+    "Bebidas": "Bebidas, refrigerantes, sucos, drinks (não aparecem na cozinha)"
   },
   "pratos": {
     "macarrão a bolonhesa": {
@@ -269,6 +270,48 @@
       "categoria": "sobremesa",
       "composicao": [
         { "item": "Salada de Frutas na Taça com Creme de Maracujá", "setor": "Sobremesas", "quantidade": 1 }
+      ]
+    },
+    "refrigerante lata": {
+      "nome_tablet": "Refrigerante em Lata",
+      "categoria": "bebida",
+      "composicao": [
+        { "item": "Refrigerante em Lata", "setor": "Bebidas", "quantidade": 1 }
+      ]
+    },
+    "refrigerante 600ml": {
+      "nome_tablet": "Refrigerante 600ml",
+      "categoria": "bebida",
+      "composicao": [
+        { "item": "Refrigerante 600ml", "setor": "Bebidas", "quantidade": 1 }
+      ]
+    },
+    "suco natural": {
+      "nome_tablet": "Suco Natural",
+      "categoria": "bebida",
+      "composicao": [
+        { "item": "Suco Natural", "setor": "Bebidas", "quantidade": 1 }
+      ]
+    },
+    "cerveja long neck": {
+      "nome_tablet": "Cerveja Long Neck",
+      "categoria": "bebida",
+      "composicao": [
+        { "item": "Cerveja Long Neck", "setor": "Bebidas", "quantidade": 1 }
+      ]
+    },
+    "água com gás": {
+      "nome_tablet": "Água com Gás",
+      "categoria": "bebida",
+      "composicao": [
+        { "item": "Água com Gás", "setor": "Bebidas", "quantidade": 1 }
+      ]
+    },
+    "água sem gás": {
+      "nome_tablet": "Água Sem Gás",
+      "categoria": "bebida",
+      "composicao": [
+        { "item": "Água Sem Gás", "setor": "Bebidas", "quantidade": 1 }
       ]
     }
   },

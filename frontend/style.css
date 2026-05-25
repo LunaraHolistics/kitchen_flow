@@ -270,6 +270,36 @@ body {
   gap: 12px;
   transition: all 0.3s ease;
   position: relative;
+  animation: cardAppear 0.4s ease;
+}
+
+/* ← NOVO: Animação de aparecimento do card */
+@keyframes cardAppear {
+  from {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ← NOVO: Destaque visual para pedido NOVO (brilho pulsante) */
+.order-card.new {
+  animation: cardAppear 0.4s ease, newOrderGlow 2s ease-in-out 0.4s infinite;
+  border: 2px solid var(--success);
+}
+
+@keyframes newOrderGlow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(0, 217, 165, 0.7), var(--shadow-lg);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 20px 8px rgba(0, 217, 165, 0.4), var(--shadow-lg);
+    transform: scale(1.02);
+  }
 }
 
 .order-card::before {
@@ -406,7 +436,13 @@ body {
   text-align: center;
 }
 
-.order-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+/* ← NOVO: order-actions com botões sempre dentro do box */
+.order-actions { 
+  display: grid; 
+  grid-template-columns: 1fr 1fr; 
+  gap: 8px;
+  margin-top: auto; /* Empurra para o final do card */
+}
 
 /* Buttons */
 .btn {
@@ -423,6 +459,7 @@ body {
   gap: 8px;
   position: relative;
   overflow: hidden;
+  min-height: var(--btn-h); /* Garante altura mínima */
 }
 
 .btn::after {
@@ -873,6 +910,17 @@ body {
   
   /* Prevenir zoom duplo em inputs */
   input, button { font-size: 16px !important; }
+  
+  /* ← NOVO: Garantir que botões fiquem dentro do box em portrait */
+  .order-actions {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  
+  .order-actions .btn {
+    min-height: 60px;
+    font-size: 1.1rem;
+  }
 }
 
 /* Large screens (desktop) */
@@ -897,6 +945,22 @@ body {
   .tabs { top: 56px; }
   .content { padding: 12px; }
   .order-card { padding: 12px; }
+}
+
+/* ← NOVO: Portrait tablet - ajustes específicos */
+@media (orientation: portrait) and (max-width: 768px) {
+  .orders-grid {
+    grid-template-columns: 1fr; /* Um card por linha em portrait */
+  }
+  
+  .order-actions {
+    grid-template-columns: 1fr 1fr; /* Mantém 2 botões lado a lado */
+    gap: 8px;
+  }
+  
+  .order-card {
+    margin-bottom: 8px;
+  }
 }
 
 /* Print styles */

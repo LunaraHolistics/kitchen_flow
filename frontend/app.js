@@ -1,7 +1,7 @@
 /**
- * Kitchen Flow Monitor - Frontend Tablet v2.1.1
+ * Kitchen Flow Monitor - Frontend Tablet v2.1.2
  * Backend: https://kitchen-flow-swq2.onrender.com
- * Features: Timer em tempo real, Som Ding configurável, Sync Geral↔Setor, Acessibilidade
+ * Features: Timer em tempo real, Som Ding configurável, Sync Geral↔Setor, Horário sincronizado
  */
 (() => {
   'use strict';
@@ -27,11 +27,11 @@
   const TIMER_WARN_THRESHOLD = 300;   // 5 min → amarelo
   const TIMER_CRITICAL_THRESHOLD = 600; // 10 min → vermelho/piscando
 
-  console.log('🔌 Kitchen Flow v2.1.1');
+  console.log('🔌 Kitchen Flow v2.1.2');
   console.log('🔌 Backend:', BACKEND_URL);
   console.log('🔌 WebSocket:', WS_URL);
 
-  // Setores da cozinha (ordem de exibição)
+  // Setores da cozinha (ordem de exibição) - EXCETO Bebidas
   const SECTORS = ['Frios', 'Saladas', 'Fritadeira', 'Entradas', 'Fogão', 'Sobremesas'];
 
   // ============================================================================
@@ -47,6 +47,10 @@
   let timerInterval = null;
   let soundEnabled = true;
   let isInitialized = false;
+  
+  // Sincronização de horário com servidor
+  let serverTimeOffset = 0;
+  let lastTimeSync = 0;
 
   // ============================================================================
   // SELETORES DOM (cache para performance)
@@ -128,6 +132,52 @@
     if (seconds >= TIMER_WARN_THRESHOLD) return 'high';
     return '';
   }
+
+  // ============================================================================
+  // SINCRONIZAÇÃO DE HORÁRIO COM SERVIDOR
+  // ============================================================================
+
+  async function syncTimeWithServer() {
+    try {
+      const now = Date.now();
+      const response = await fetch(`${BACKEND_URL}/api/time`, { 
+        method: 'GET',
+        cache: 'no-cache',
+        signal: AbortSignal.timeout(3000)
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        const serverTime = new Date(data.timestamp).getTime();
+        const roundTripTime = Date.now() - now;
+        
+        // Calcular offset considerando tempo de ida e volta
+        serverTimeOffset = serverTime - (now + roundTripTime / 2);
+        lastTimeSync = Date.now();
+        
+        console.log('🕐 Horário sincronizado. Offset:', serverTimeOffset, 'ms');
+      }
+    } catch (e) {
+      console.warn('⚠️ Não foi possível sincronizar horário:', e.message);
+      // Fallback: usar horário local
+      serverTimeOffset = 0;
+    }
+  }
+
+  // Obter horário sincronizado com servidor
+  function getServerTime() {
+    return new Date(Date.now() + serverTimeOffset);
+  }
+
+  // Sincronizar a cada 5 minutos
+  setInterval(() => {
+    if (isInitialized) {
+      syncTimeWithServer();
+    }
+  }, 5 * 60 * 1000);
+
+  // Primeira sincronização
+  syncTimeWithServer();
 
   // ============================================================================
   // UI: TOAST NOTIFICATIONS
@@ -253,7 +303,8 @@
 
   function startClock() {
     const update = () => {
-      els.clock.textContent = new Date().toLocaleTimeString('pt-BR', {
+      const now = getServerTime();
+      els.clock.textContent = now.toLocaleTimeString('pt-BR', {
         hour: '2-digit',
         minute: '2-digit',
         hour12: false
@@ -333,6 +384,9 @@
       reconnectAttempts = 0;
       els.loadingStatus?.textContent = 'Sincronizando...';
       toast('🟢 Conectado ao servidor', 'info', 2000);
+      
+      // Sincronizar horário após conectar
+      syncTimeWithServer();
     };
 
     ws.onclose = (event) => {
@@ -455,6 +509,7 @@
         // Pedido existente foi atualizado
         const idx = orders.findIndex(o => o.id === data.order?.id);
         if (idx > -1) {
+          console.log('📥 Pedido atualizado do servidor:', data.order.id, data.order.status);
           orders[idx] = data.order;
           renderAll();
 
@@ -488,7 +543,11 @@
   // ============================================================================
 
   function renderGeral() {
-    const ativos = orders.filter(o => o.status !== 'concluido');
+    // Filtrar pedidos concluídos E bebidas (setor Bebidas não aparece)
+    const ativos = orders.filter(o => 
+      o.status !== 'concluido' &&
+      !o.itens.every(i => i.setor === 'Bebidas')
+    );
 
     // Atualizar badge
     if (els.badges.geral) {
@@ -569,14 +628,21 @@
   // ============================================================================
 
   function renderSetor() {
-    const ativos = orders.filter(o => o.status !== 'concluido');
+    // Filtrar pedidos que NÃO são apenas bebidas
+    const ativos = orders.filter(o => 
+      o.status !== 'concluido' &&
+      o.itens.some(i => i.setor !== 'Bebidas')
+    );
 
-    // Agrupar itens por setor
+    // Agrupar itens por setor (EXCETO Bebidas)
     const bySector = {};
     SECTORS.forEach(s => bySector[s] = {});
 
     ativos.forEach(order => {
       order.itens.forEach(it => {
+        // Ignorar itens do setor Bebidas
+        if (it.setor === 'Bebidas') return;
+        
         if (!bySector[it.setor]) bySector[it.setor] = {};
 
         if (!bySector[it.setor][it.item]) {
@@ -878,36 +944,80 @@
   // Iniciar preparo de um pedido específico
   window.startOrder = (id) => {
     const order = orders.find(o => o.id === id);
-    if (!order) return;
+    if (!order) {
+      console.error('❌ Pedido não encontrado:', id);
+      return;
+    }
 
-    if (send('UPDATE_STATUS', {
+    const agora = getServerTime().toISOString();
+    console.log(`▶ Iniciando pedido ${order.mesa} (ID: ${id}) às ${agora}`);
+
+    // Atualizar localmente IMEDIATAMENTE (antes da confirmação do servidor)
+    order.status = 'em-preparo';
+    order.startedAt = agora;
+    
+    // Renderizar imediatamente para feedback visual instantâneo
+    renderAll();
+    startTimers();
+    
+    // Toast de feedback
+    toast(`▶ ${order.mesa} em produção`, 'success', 2000);
+
+    // Enviar para backend
+    const payload = {
       orderId: id,
       status: 'em-preparo',
-      startedAt: new Date().toISOString()
-    })) {
-      toast(`▶ ${order.mesa} em produção`, 'info', 2000);
-      order.status = 'em-preparo';
-      order.startedAt = new Date().toISOString();
+      startedAt: agora,
+      timestamp: agora
+    };
+
+    console.log('📤 Enviando UPDATE_STATUS:', payload);
+
+    if (send('UPDATE_STATUS', payload)) {
+      // Forçar sync após 500ms para garantir que backend processou
+      setTimeout(() => {
+        console.log('🔄 Forçando sync após iniciar pedido');
+        send('REQUEST_SYNC', { orderId: id });
+      }, 500);
+    } else {
+      // Reverter se falhou
+      order.status = 'pendente';
+      order.startedAt = null;
       renderAll();
-      startTimers();
+      toast('❌ Erro ao iniciar pedido - sem conexão', 'error');
     }
   };
 
   // Marcar pedido como pronto/concluído
   window.markReady = (id) => {
     const order = orders.find(o => o.id === id);
-    if (!order) return;
+    if (!order) {
+      console.error('❌ Pedido não encontrado:', id);
+      return;
+    }
 
     showModal(`Confirmar: concluir ${order.mesa}?`, () => {
+      const agora = getServerTime().toISOString();
+      console.log(`✅ Concluindo pedido ${order.mesa} (ID: ${id}) às ${agora}`);
+
+      // Atualizar localmente imediatamente
+      order.status = 'concluido';
+      order.concludedAt = agora;
+      order.updatedAt = agora;
+      
+      renderAll();
+      toast(`✅ ${order.mesa} concluído!`, 'success', 2000);
+
+      // Enviar para backend
       if (send('UPDATE_STATUS', {
         orderId: id,
         status: 'concluido',
-        concludedAt: new Date().toISOString()
+        concludedAt: agora,
+        timestamp: agora
       })) {
-        toast(`✅ ${order.mesa} concluído!`, 'success', 2000);
-        order.status = 'concluido';
-        order.concludedAt = new Date().toISOString();
-        renderAll();
+        setTimeout(() => {
+          send('REQUEST_SYNC', { orderId: id });
+        }, 500);
       }
     });
   };
@@ -924,23 +1034,36 @@
       return;
     }
 
-    showModal(`Iniciar ${aguardando.length} pedido(s) em ${sector}?`, () => {
-      const agora = new Date().toISOString();
+    console.log(`▶ Iniciando setor ${sector}: ${aguardando.length} pedido(s)`);
 
+    showModal(`Iniciar ${aguardando.length} pedido(s) em ${sector}?`, () => {
+      const agora = getServerTime().toISOString();
+
+      // Atualizar todos localmente primeiro
+      aguardando.forEach(o => {
+        o.status = 'em-preparo';
+        o.startedAt = agora;
+      });
+
+      renderAll();
+      startTimers();
+      toast(`${sector} iniciado! (${aguardando.length} pedidos)`, 'success');
+
+      // Enviar para backend
       aguardando.forEach(o => {
         send('UPDATE_STATUS', {
           orderId: o.id,
           status: 'em-preparo',
           sector,
-          startedAt: agora
+          startedAt: agora,
+          timestamp: agora
         });
-        o.status = 'em-preparo';
-        o.startedAt = agora;
       });
 
-      toast(`${sector} iniciado! (${aguardando.length} pedidos)`, 'success');
-      renderAll();
-      startTimers();
+      // Forçar sync após 500ms
+      setTimeout(() => {
+        send('REQUEST_SYNC', { sector });
+      }, 500);
     });
   };
 
@@ -956,29 +1079,46 @@
       return;
     }
 
-    showModal(`Concluir ${emPreparo.length} pedido(s) de ${sector}?`, () => {
-      const agora = new Date().toISOString();
+    console.log(`✅ Concluindo setor ${sector}: ${emPreparo.length} pedido(s)`);
 
+    showModal(`Concluir ${emPreparo.length} pedido(s) de ${sector}?`, () => {
+      const agora = getServerTime().toISOString();
+
+      // Atualizar localmente
+      emPreparo.forEach(o => {
+        o.status = 'concluido';
+        o.concludedAt = agora;
+        o.updatedAt = agora;
+      });
+
+      renderAll();
+      toast(`${sector} concluído!`, 'success');
+
+      // Enviar para backend
       emPreparo.forEach(o => {
         send('UPDATE_STATUS', {
           orderId: o.id,
           status: 'concluido',
           sector,
-          concludedAt: agora
+          concludedAt: agora,
+          timestamp: agora
         });
-        o.status = 'concluido';
-        o.concludedAt = agora;
       });
 
-      toast(`${sector} concluído!`, 'success');
-      renderAll();
+      // Forçar sync
+      setTimeout(() => {
+        send('REQUEST_SYNC', { sector });
+      }, 500);
     });
   };
 
   // Remover um pedido concluído do histórico
   window.removeCompleted = (id) => {
     const order = orders.find(o => o.id === id);
-    if (!order) return;
+    if (!order) {
+      console.error('❌ Pedido não encontrado:', id);
+      return;
+    }
 
     showModal(`Remover ${order.mesa} do histórico?`, () => {
       if (send('DELETE_ORDER', { orderId: id })) {
@@ -1063,7 +1203,7 @@
   // ============================================================================
 
   function init() {
-    console.log('🚀 Inicializando Kitchen Flow...');
+    console.log('🚀 Inicializando Kitchen Flow v2.1.2...');
 
     // Setup básico
     startClock();
@@ -1083,10 +1223,13 @@
       renderAll,
       startTimers,
       playDing,
-      toast
+      toast,
+      syncTimeWithServer,
+      getServerTime
     };
 
     console.log('✅ Kitchen Flow inicializado');
+    console.log('📊 Comandos disponíveis: window.KFM');
   }
 
   // Iniciar quando DOM estiver pronto
