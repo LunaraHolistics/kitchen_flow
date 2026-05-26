@@ -1178,8 +1178,41 @@ function startHttpServer() {
       }));
 
     }
-    // 404 para outras rotas
+    // ← NOVO: Servidor de Arquivos Estáticos para Frontend (Garçom/Block)
     else {
+      // Determinar caminho correto (desenvolvimento vs produção)
+      const staticPath = app.isPackaged 
+        ? path.join(process.resourcesPath, 'frontend') 
+        : path.join(__dirname, '..', 'frontend');
+      
+      // Normalizar URL (remover query strings e tratar root)
+      const urlPath = req.url.split('?')[0];
+      const filePath = path.join(staticPath, urlPath === '/' ? 'waiter.html' : urlPath);
+      
+      // Proteção contra path traversal e servir arquivo se existir
+      if (!filePath.includes('..') && fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+        const extname = path.extname(filePath);
+        const mimeTypes = {
+          '.html': 'text/html',
+          '.js': 'text/javascript',
+          '.css': 'text/css',
+          '.json': 'application/json',
+          '.png': 'image/png',
+          '.gif': 'image/gif',
+          '.svg': 'image/svg+xml',
+          '.ico': 'image/x-icon',
+          '.txt': 'text/plain'
+        };
+        
+        res.writeHead(200, { 
+          'Content-Type': mimeTypes[extname] || 'application/octet-stream',
+          'Cache-Control': 'public, max-age=300' // Cache de 5 minutos para assets
+        });
+        fs.createReadStream(filePath).pipe(res);
+        return;
+      }
+      
+      // 404 para outras rotas
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       res.end('Kitchen Flow Bridge API - Endpoint not found');
     }
@@ -1189,6 +1222,7 @@ function startHttpServer() {
     log('INFO', `🌐 API HTTP rodando em http://localhost:4545`);
     log('INFO', `📱 Endpoint do garçom: GET /api/waiter/orders?garcom=Nome`);
     log('INFO', `🔑 Endpoint do PIN: GET /api/waiter/pin`);
+    log('INFO', `📄 Servidor de arquivos: frontend/ → /waiter.html, /waiter.js, etc.`);
   });
 
   httpServer.on('error', (err) => {
