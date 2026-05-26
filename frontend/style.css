@@ -18,6 +18,12 @@
   --waiting-bg: #3a2a1e;
   --waiting-border: #ffc107;
   
+  /* ← NOVO: Cores para wait time por item */
+  --wait-fast: #00d9a5;      /* <5min → verde */
+  --wait-medium: #ffc107;    /* 5-10min → amarelo */
+  --wait-slow: #dc2626;      /* >10min → vermelho */
+  --cancel-red: #ef4444;     /* Cancelamento */
+  
   /* Tipografia e layout */
   --font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --btn-h: 70px;
@@ -252,6 +258,82 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* ← NOVO: Banner de Cancelamento (fixo no topo) */
+.cancel-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(135deg, var(--cancel-red), #b91c1c);
+  color: white;
+  padding: 12px 20px;
+  z-index: 10000;
+  display: none;
+  animation: cancelPulse 1.5s ease-in-out infinite;
+  box-shadow: 0 4px 20px rgba(239, 68, 68, 0.5);
+}
+
+.cancel-banner.visible {
+  display: block;
+  animation: cancelPulse 1.5s ease-in-out infinite;
+}
+
+.cancel-banner.hidden {
+  display: none;
+}
+
+@keyframes cancelPulse {
+  0%, 100% { box-shadow: 0 4px 20px rgba(239, 68, 68, 0.5); }
+  50% { box-shadow: 0 4px 30px rgba(239, 68, 68, 0.9); }
+}
+
+.cancel-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.cancel-icon {
+  font-size: 1.4rem;
+  animation: shake 0.5s ease-in-out infinite;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-3px); }
+  75% { transform: translateX(3px); }
+}
+
+.cancel-message {
+  flex: 1;
+  font-weight: 700;
+  font-size: 1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cancel-close {
+  background: rgba(255,255,255,0.2);
+  border: none;
+  color: white;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  font-size: 1.2rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s ease;
+}
+
+.cancel-close:hover {
+  background: rgba(255,255,255,0.3);
+}
+
 /* Orders Grid */
 .orders-grid {
   display: grid;
@@ -271,6 +353,8 @@ body {
   transition: all 0.3s ease;
   position: relative;
   animation: cardAppear 0.4s ease;
+  /* ← CORREÇÃO #2: Permitir que o banner de prioridade "saia" visualmente */
+  overflow: visible;
 }
 
 /* ← NOVO: Animação de aparecimento do card */
@@ -300,6 +384,12 @@ body {
     box-shadow: 0 0 20px 8px rgba(0, 217, 165, 0.4), var(--shadow-lg);
     transform: scale(1.02);
   }
+}
+
+/* ← NOVO: Destaque para card ao scroll de cancelamento */
+.order-card.highlight {
+  animation: highlight 1s ease;
+  border: 2px solid var(--warn);
 }
 
 .order-card::before {
@@ -335,6 +425,41 @@ body {
 @keyframes border-pulse {
   0%, 100% { border-left-color: var(--waiting-border); }
   50% { border-left-color: transparent; }
+}
+
+/* ← NOVO: Estilo para pedido cancelado */
+.order-card.cancelled {
+  opacity: 0.7;
+  border-left-color: var(--cancel-red);
+  background: linear-gradient(135deg, var(--card), #1a1a2e);
+}
+
+.order-card.cancelled::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    45deg,
+    transparent,
+    transparent 10px,
+    rgba(239, 68, 68, 0.1) 10px,
+    rgba(239, 68, 68, 0.1) 20px
+  );
+  border-radius: var(--radius);
+  pointer-events: none;
+}
+
+.cancel-ribbon {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: var(--cancel-red);
+  color: white;
+  padding: 4px 12px;
+  border-radius: 0 var(--radius) 0 var(--radius);
+  font-size: 0.75rem;
+  font-weight: 700;
+  z-index: 1;
 }
 
 .order-card.delivery { border-left-color: var(--delivery); }
@@ -392,6 +517,12 @@ body {
   animation: pulse-text 0.5s ease-in-out infinite;
 }
 
+/* ← NOVO: Timer para item cancelado */
+.order-time .timer.cancelled {
+  color: var(--cancel-red);
+  text-decoration: line-through;
+}
+
 @keyframes pulse-text {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }
@@ -399,6 +530,7 @@ body {
 
 .order-items { display: flex; flex-direction: column; gap: 8px; }
 
+/* ← NOVO: Item com controle individual */
 .order-item {
   display: flex;
   justify-content: space-between;
@@ -406,11 +538,23 @@ body {
   padding: 8px 12px;
   background: rgba(255,255,255,0.05);
   border-radius: 8px;
-  transition: background 0.2s ease;
+  transition: all 0.2s ease;
+  position: relative;
 }
 
 .order-item:hover {
   background: rgba(255,255,255,0.1);
+}
+
+/* ← NOVO: Item cancelado */
+.order-item.cancelled {
+  opacity: 0.6;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.order-item.cancelled .name {
+  text-decoration: line-through;
+  color: var(--muted);
 }
 
 .order-item .sector { 
@@ -427,6 +571,20 @@ body {
   margin: 0 8px;
 }
 
+/* ← NOVO: Badge de wait time por item */
+.order-item .wait-time {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  margin-left: 8px;
+  background: rgba(0,0,0,0.2);
+}
+
+.order-item .wait-time.wait-fast { color: var(--wait-fast); }
+.order-item .wait-time.wait-medium { color: var(--wait-medium); }
+.order-item .wait-time.wait-slow { color: var(--wait-slow); }
+
 .order-item .qty {
   background: var(--accent);
   padding: 4px 12px;
@@ -434,6 +592,54 @@ body {
   font-weight: 700;
   min-width: 32px;
   text-align: center;
+}
+
+/* ← NOVO: Layout para conteúdo do item + ações */
+.order-item .item-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.order-item .item-actions {
+  display: flex;
+  gap: 4px;
+}
+
+/* ← NOVO: Botões de ação por item */
+.btn-item {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  background: #444;
+  color: white;
+}
+
+.btn-item:hover { transform: scale(1.05); }
+.btn-item:active { transform: scale(0.95); }
+
+.btn-item.btn-start { background: var(--success); color: #000; }
+.btn-item.btn-done { background: var(--accent); color: #fff; }
+
+.btn-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ← NOVO: Badge de cancelamento para item */
+.order-item .cancelled-badge {
+  font-size: 1.2rem;
+  color: var(--cancel-red);
+  margin-left: 8px;
 }
 
 /* ← NOVO: order-actions com botões sempre dentro do box */
@@ -614,6 +820,17 @@ body {
   font-weight: 800;
 }
 
+/* ← NOVO: Tag de item cancelado */
+.table-tag.cancelled {
+  opacity: 0.6;
+  background: rgba(239, 68, 68, 0.2);
+}
+
+.table-tag.cancelled .cancelled-mini {
+  font-size: 1rem;
+  color: var(--cancel-red);
+}
+
 .table-tag .mini-timer {
   font-size: 0.75rem;
   font-weight: 700;
@@ -647,22 +864,132 @@ body {
 /* Completed */
 .completed-list { display: flex; flex-direction: column; gap: 10px; }
 
+/* ← NOVO: Item concluído expansível */
 .completed-item {
   background: var(--card);
   border-radius: var(--radius);
   padding: 12px 16px;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  gap: 8px;
   opacity: 0.85;
   transition: opacity 0.2s ease;
 }
 
 .completed-item:hover { opacity: 1; }
 
+.completed-item .completed-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.completed-item .completed-header:hover {
+  background: rgba(255,255,255,0.05);
+  border-radius: 8px;
+  padding: 4px 8px;
+}
+
 .completed-item .info { display: flex; flex-direction: column; gap: 2px; }
 .completed-item .mesa { font-weight: 700; font-size: 1.1rem; }
 .completed-item .time { font-size: 0.9rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* ← NOVO: Stats de item para análise */
+.completed-item .item-stats {
+  font-size: 0.8rem;
+  color: var(--success);
+  margin-top: 2px;
+}
+
+/* ← NOVO: Nome do garçom em concluídos */
+.completed-item .garcom-small {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-top: 2px;
+  display: block;
+}
+
+/* ← NOVO: Observações em concluídos */
+.completed-item .obs-small {
+  font-size: 0.75rem;
+  color: var(--warn);
+  font-weight: 700;
+  margin-top: 2px;
+  display: block;
+  text-transform: uppercase;
+}
+
+.completed-item .expand-icon {
+  font-size: 1.2rem;
+  color: var(--muted);
+  transition: transform 0.2s ease;
+}
+
+.completed-item .expand-icon.rotated {
+  transform: rotate(180deg);
+}
+
+/* ← NOVO: Detalhes expansíveis do pedido concluído */
+.completed-item .completed-details {
+  margin-top: 8px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255,255,255,0.1);
+}
+
+.completed-item .completed-details.hidden {
+  display: none;
+}
+
+.completed-item .details-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.completed-item .detail-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 8px;
+  background: rgba(255,255,255,0.03);
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.completed-item .detail-name {
+  color: var(--text);
+}
+
+.completed-item .detail-name small {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.completed-item .detail-time {
+  font-weight: 700;
+  font-size: 0.85rem;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(0,0,0,0.2);
+}
+
+.completed-item .detail-time.wait-fast { color: var(--wait-fast); }
+.completed-item .detail-time.wait-medium { color: var(--wait-medium); }
+.completed-item .detail-time.wait-slow { color: var(--wait-slow); }
+
+/* ← NOVO: Alerta para item muito lento */
+.completed-item .alert-slow {
+  background: rgba(239, 68, 68, 0.2);
+  border-left: 3px solid var(--cancel-red);
+  color: var(--warn);
+  padding: 8px 12px;
+  border-radius: 0 6px 6px 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
 
 .btn-clear {
   margin-top: 16px;
@@ -789,6 +1116,19 @@ body {
   box-shadow: var(--shadow);
 }
 
+/* ← NOVO: Engrenagem mais discreta */
+.config-toggle.config-toggle-discreet {
+  opacity: 0.4;
+  border-width: 1px;
+}
+
+.config-toggle.config-toggle-discreet:hover {
+  opacity: 1;
+  background: var(--accent);
+  color: #fff;
+  transform: scale(1.05);
+}
+
 .config-toggle:hover { 
   background: var(--accent); 
   color: #fff;
@@ -884,13 +1224,98 @@ body {
 
 .highlight { animation: highlight 1s ease; }
 
-/* ← Estados de prioridade visual */
+/* ← CORREÇÃO #1: Estados de prioridade visual CONSOLIDADOS */
 .order-card.priority-high {
-  box-shadow: 0 0 0 2px var(--accent), var(--shadow-lg);
+  border: 2px solid var(--warn);
+  box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.3), var(--shadow-lg);
+  overflow: visible; /* ← CORREÇÃO #2: Permitir overflow para o banner */
 }
 
 .order-card.priority-high .order-mesa {
-  color: var(--accent);
+  color: var(--warn);
+  font-weight: 900;
+}
+
+/* ← NOVO: Estilo para nome do garçom no card */
+.order-garcom {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 500;
+}
+
+.order-garcom::before {
+  content: "👨‍🍳";
+  font-size: 0.9rem;
+}
+
+/* ← NOVO: Banner de prioridade no topo do card */
+.priority-banner {
+  background: linear-gradient(135deg, var(--warn), #f59e0b);
+  color: #000;
+  padding: 6px 12px;
+  border-radius: 8px 8px 0 0;
+  margin: -16px -16px 12px -16px; /* Estende para as bordas do card */
+  font-weight: 800;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  animation: pulse-priority 2s ease-in-out infinite;
+}
+
+@keyframes pulse-priority {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(255, 193, 7, 0); }
+}
+
+/* ← NOVO: Badge de prioridade em itens */
+.priority-badge {
+  background: var(--warn);
+  color: #000;
+  padding: 2px 8px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  margin-left: 8px;
+}
+
+/* ← NOVO: Observações em destaque */
+.order-observations {
+  font-size: 0.8rem;
+  color: var(--warn);
+  font-weight: 800;
+  text-transform: uppercase;
+  margin-top: 4px;
+  letter-spacing: 0.5px;
+  background: rgba(255, 193, 7, 0.1);
+  padding: 4px 8px;
+  border-radius: 4px;
+  border-left: 3px solid var(--warn);
+  /* ← CORREÇÃO #3: Quebrar palavras longas para evitar overflow */
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+/* ← NOVO: Indicador de observação em tags de setor */
+.table-obs {
+  font-size: 0.7rem;
+  margin-left: 4px;
+  opacity: 0.8;
+}
+
+/* ← NOVO: Setor com itens prioritários */
+.sector-card.has-priority {
+  border: 2px solid var(--warn);
+  box-shadow: 0 0 15px rgba(255, 193, 7, 0.2);
+}
+
+.sector-item.priority-item {
+  border-left-color: var(--warn);
+  background: rgba(255, 193, 7, 0.05);
 }
 
 /* Touch optimizations para tablets */
@@ -921,6 +1346,27 @@ body {
     min-height: 60px;
     font-size: 1.1rem;
   }
+  
+  /* ← NOVO: Botões de item maiores para toque */
+  .btn-item {
+    width: 44px;
+    height: 44px;
+    font-size: 1.3rem;
+  }
+  
+  /* ← NOVO: Garçom legível em touch */
+  .order-garcom {
+    font-size: 0.9rem;
+  }
+  
+  /* ← NOVO: Prioridade legível em touch */
+  .priority-banner {
+    font-size: 0.9rem;
+    padding: 8px 12px;
+  }
+  .order-observations {
+    font-size: 0.85rem;
+  }
 }
 
 /* Large screens (desktop) */
@@ -945,6 +1391,14 @@ body {
   .tabs { top: 56px; }
   .content { padding: 12px; }
   .order-card { padding: 12px; }
+  
+  /* ← NOVO: Banner de cancelamento em landscape */
+  .cancel-banner-content {
+    font-size: 0.9rem;
+  }
+  .cancel-message {
+    font-size: 0.9rem;
+  }
 }
 
 /* ← NOVO: Portrait tablet - ajustes específicos */
@@ -961,11 +1415,34 @@ body {
   .order-card {
     margin-bottom: 8px;
   }
+  
+  /* ← NOVO: Ajustes para controles por item em portrait */
+  .order-item {
+    flex-wrap: wrap;
+  }
+  .order-item .item-content {
+    flex: 1 1 100%;
+    margin-bottom: 8px;
+  }
+  .order-item .item-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  
+  /* ← NOVO: Garçom com espaçamento adequado em portrait */
+  .order-garcom {
+    margin-top: 6px;
+  }
+  
+  /* ← NOVO: Prioridade com espaçamento em portrait */
+  .priority-banner {
+    margin: -12px -12px 10px -12px;
+  }
 }
 
 /* Print styles */
 @media print {
-  .tabs, .app-header, .config-toggle, .btn-clear, .modal, .toasts { display: none !important; }
+  .tabs, .app-header, .config-toggle, .btn-clear, .modal, .toasts, .cancel-banner { display: none !important; }
   
   body { 
     background: #fff; 
@@ -984,8 +1461,29 @@ body {
     border-left: 6px solid #000;
   }
   
+  .order-card.cancelled {
+    opacity: 1;
+  }
+  
   .order-mesa { font-size: 18pt; }
   .order-time { font-size: 16pt; color: #000; }
+  
+  /* ← NOVO: Garçom visível em impressão */
+  .order-garcom {
+    color: #000;
+    font-size: 10pt;
+  }
+  
+  /* ← NOVO: Prioridade visível em impressão */
+  .priority-banner {
+    background: #ffc107 !important;
+    color: #000 !important;
+    border: 1px solid #000;
+  }
+  .order-observations {
+    color: #000;
+    font-weight: 700;
+  }
 }
 
 /* Dark mode system preference (opcional) */

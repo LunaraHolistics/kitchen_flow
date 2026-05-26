@@ -1,6 +1,6 @@
 {
   "name": "kitchen-flow-bridge",
-  "version": "2.0.0",
+  "version": "2.1.6",
   "description": "Bridge para monitorar downloads do Saipos e processar pedidos em tempo real",
   "author": "CLB Studio - by Celso Luiz",
   "main": "main.js",
@@ -85,6 +85,15 @@
       {
         "from": "EXTENSAO_INSTRUCOES.txt",
         "to": "EXTENSAO_INSTRUCOES.txt"
+      },
+      {
+        "from": "../frontend",
+        "to": "frontend",
+        "filter": [
+          "**/*",
+          "!node_modules/**/*",
+          "!**/*.md"
+        ]
       }
     ]
   }

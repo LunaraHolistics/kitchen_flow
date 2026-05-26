@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+  <meta name="theme-color" content="#1a1a2e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  
+  <title>🍳 Kitchen Flow - Garçom</title>
+  
+  <!-- ← NOVO: Links para PWA com ícones diferenciados -->
+  <link rel="manifest" href="waiter-manifest.json">
+  <link rel="apple-touch-icon" href="fazenda-waiter-192.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="fazenda-waiter-192.png">
+  
+  <link rel="stylesheet" href="waiter.css">
+  <link rel="icon" type="image/png" href="fazenda.png">
+</head>
+<body>
+  <!-- Loading -->
+  <div id="loading" class="loading">
+    <div class="spinner"></div>
+    <p>Carregando pedidos...</p>
+  </div>
+
+  <!-- Header -->
+  <header class="waiter-header">
+    <div class="header-content">
+      <h1>🍳 Meus Pedidos</h1>
+      <div class="header-actions">
+        <button id="refreshBtn" class="icon-btn" title="Atualizar" aria-label="Atualizar pedidos">🔄</button>
+        <select id="garcomSelect" class="garcom-select" aria-label="Filtrar por garçom">
+          <option value="">Todos os garçons</option>
+          <!-- Preenchido dinamicamente -->
+        </select>
+      </div>
+    </div>
+    <div class="connection-status" id="connStatus">
+      <span class="status-dot offline"></span>
+      <span class="status-text">Offline</span>
+    </div>
+  </header>
+
+  <!-- Filtro rápido -->
+  <nav class="filters" role="tablist">
+    <button class="filter-btn active" data-filter="all" role="tab" aria-selected="true">Todos</button>
+    <button class="filter-btn" data-filter="pending" role="tab" aria-selected="false">⏳ Pendentes</button>
+    <button class="filter-btn" data-filter="preparing" role="tab" aria-selected="false">🔥 Em preparo</button>
+    <button class="filter-btn" data-filter="ready" role="tab" aria-selected="false">✅ Prontos</button>
+    <button class="filter-btn priority" data-filter="priority" role="tab" aria-selected="false">👶 Kids</button>
+  </nav>
+
+  <!-- Lista de Pedidos -->
+  <main id="ordersList" class="orders-list" role="list" aria-live="polite">
+    <!-- Pedidos renderizados aqui -->
+  </main>
+
+  <!-- Empty State -->
+  <div id="emptyState" class="empty-state hidden">
+    <span class="empty-icon" aria-hidden="true">📋</span>
+    <p>Nenhum pedido encontrado</p>
+    <small>Selecione outro filtro ou aguarde novos pedidos</small>
+  </div>
+
+  <!-- Pull to Refresh Indicator -->
+  <div id="pullIndicator" class="pull-indicator hidden">
+    <span class="pull-icon">⬇️</span>
+    <span class="pull-text">Solte para atualizar</span>
+  </div>
+
+  <!-- Toast Notifications -->
+  <div id="toasts" class="toasts" role="region" aria-live="assertive"></div>
+
+  <!-- Footer -->
+  <footer class="waiter-footer">
+    <small>Atualizado: <span id="lastUpdate">--:--</span></small>
+    <small>•</small>
+    <small id="ordersCount">0 pedidos</small>
+  </footer>
+
+  <script src="waiter.js"></script>
+</body>
+</html>

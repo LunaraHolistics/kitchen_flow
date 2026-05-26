@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+  <meta name="theme-color" content="#1a1a2e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  
+  <title>🔒 Kitchen Flow - Acesso Restrito</title>
+  
+  <!-- ← AJUSTE: Usar ícone específico do garçom para consistência -->
+  <link rel="icon" type="image/png" sizes="32x32" href="fazenda-waiter-32.png">
+  <link rel="stylesheet" href="block-mobile.css">
+</head>
+<body>
+  <!-- GIF Temático (leve humor profissional) -->
+  <div class="gif-container">
+    <!-- Fallback automático se o GIF personalizado não existir -->
+    <img src="simpsons-cave.gif" alt="Esperando o fogo" class="gif" onerror="this.src='fogo.gif'">
+    <p class="gif-caption">🪨 "Até o Homer precisa de licença para acender o fogo!"</p>
+  </div>
+
+  <!-- Mensagem Principal -->
+  <h1>🔒 Acesso Temporariamente Indisponível</h1>
+  <p class="mobile-msg">
+    O Kitchen Flow precisa de uma licença ativa para continuar funcionando.
+  </p>
+
+  <!-- Status Box Simplificado -->
+  <div class="status-box simple">
+    <div>📋 <strong>Status:</strong> <span style="color:#e94560">Aguardando renovação</span></div>
+    <div style="margin-top:8px;font-size:0.85rem;color:var(--muted)">
+      🔐 Esta mensagem aparece em todos os dispositivos até a licença ser renovada.
+    </div>
+  </div>
+
+  <!-- Instruções por Perfil -->
+  <div class="help-section">
+    <div class="help-card">
+      <span class="help-icon">👨‍🍳</span>
+      <div>
+        <strong>Garçom / Cozinha:</strong>
+        <p>Avise o gerente ou caixa para renovar a licença. Enquanto isso, anote os pedidos no bloco! 📝</p>
+      </div>
+    </div>
+    
+    <div class="help-card">
+      <span class="help-icon">👔</span>
+      <div>
+        <strong>Gerente / Caixa:</strong>
+        <p>Entre em contato para ativar a licença e retomar o sistema.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Botão de Ação -->
+  <button class="btn-whatsapp" onclick="openWhatsApp()">
+    📱 Falar no WhatsApp para Renovar
+  </button>
+
+  <!-- Nota de Segurança -->
+  <div class="security-note">
+    <small>
+      🔒 <strong>Nota:</strong> Esta página só é acessível quando o dispositivo está conectado à rede interna do restaurante.<br><br>
+      Se você está vendo isso fora do local, entre em contato com o suporte.
+    </small>
+  </div>
+
+  <!-- Footer -->
+  <footer class="mobile-footer">
+    <small>Kitchen Flow v2.1.6 • CLB Studio</small>
+  </footer>
+
+  <script>
+    // Abrir WhatsApp com mensagem pré-preenchida
+    function openWhatsApp() {
+      const phone = '5516997934558'; // Substituir pelo número real
+      const message = encodeURIComponent(
+        'Olá Celso, o Kitchen Flow está bloqueado e precisa de renovação de licença.\n\n' +
+        '📍 Local: Restaurante\n' +
+        '📱 Dispositivo: ' + (navigator.userAgent.includes('Mobile') ? 'Celular' : 'Tablet/PC') + '\n' +
+        '🕐 Horário: ' + new Date().toLocaleString('pt-BR') + '\n\n' +
+        'Podemos ajudar com a ativação?'
+      );
+      window.open(`https://wa.me/${phone}?text=${message}`, '_blank');
+    }
+
+    // ← NOVO: Verificação básica de rede (fallback)
+    // Observação: Navegadores não permitem ler SSID do WiFi por segurança
+    // A restrição real deve ser feita no roteador (ver instruções abaixo)
+    document.addEventListener('DOMContentLoaded', () => {
+      // Feedback visual se estiver offline
+      if (!navigator.onLine) {
+        const note = document.querySelector('.security-note');
+        if (note) {
+          note.innerHTML = `
+            <small style="color:var(--warn)">
+              ⚠️ Você está offline. Conecte-se à rede "ADM" do restaurante para acessar o sistema.
+            </small>
+          `;
+        }
+      }
+    });
+  </script>
+</body>
+</html>

@@ -27,6 +27,18 @@ contextBridge.exposeInMainWorld('bridgeAPI', {
   activateLicense: (key) => ipcRenderer.invoke('activate-license', key),
   restartApp: () => ipcRenderer.send('restart-app'),
   
+  // ← NOVO: SISTEMA DE PIN DO GARÇOM ==========
+  getCurrentPin: () => ipcRenderer.invoke('get-current-pin'),
+  getWaiterPinInfo: () => ipcRenderer.invoke('get-waiter-pin-info'),
+  setWaiterPin: (pin) => ipcRenderer.invoke('set-waiter-pin', pin),
+  clearPinHistory: () => ipcRenderer.invoke('clear-pin-history'),
+  
+  // ← NOVO: DIAGNÓSTICO DE ANTIVÍRUS ==========
+  checkAntivirusExclusions: () => ipcRenderer.invoke('check-antivirus-exclusions'),
+  
+  // ← NOVO: LISTA DE GARÇONS ==========
+  getWaitersList: () => ipcRenderer.invoke('get-waiters-list'),
+  
   // ========== EVENTOS (Listeners) ==========
   
   // Quando um novo arquivo é detectado pelo watcher
@@ -62,5 +74,12 @@ contextBridge.exposeInMainWorld('bridgeAPI', {
     const listener = (event, status) => callback(status);
     ipcRenderer.on('license-changed', listener);
     return () => ipcRenderer.removeListener('license-changed', listener);
+  },
+  
+  // ← NOVO: Quando o PIN é atualizado (para exibir na UI)
+  onPinUpdated: (callback) => {
+    const listener = (event, data) => callback(data);
+    ipcRenderer.on('pin-updated', listener);
+    return () => ipcRenderer.removeListener('pin-updated', listener);
   }
 });

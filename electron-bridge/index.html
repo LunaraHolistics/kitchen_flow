@@ -17,7 +17,7 @@
     }
     
     .container {
-      max-width: 400px;
+      max-width: 420px;
       margin: 0 auto;
     }
     
@@ -44,6 +44,224 @@
       font-size: 10px;
       color: #6b7280;
       margin-top: 4px;
+    }
+    
+    /* ← NOVO: PIN Display */
+    .pin-display {
+      background: linear-gradient(135deg, #16213e, #1a1a2e);
+      border: 2px solid #ffc107;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 12px;
+      animation: slideIn 0.3s ease;
+      display: none;
+    }
+    
+    .pin-display.visible {
+      display: block;
+    }
+    
+    .pin-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      color: #ffc107;
+    }
+    
+    .pin-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 13px;
+    }
+    
+    .pin-icon { font-size: 1.2rem; }
+    
+    .pin-copy-btn {
+      background: #444;
+      color: #fff;
+      border: none;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      cursor: pointer;
+      transition: background 0.2s;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    
+    .pin-copy-btn:hover { background: #555; }
+    
+    .pin-code {
+      font-size: 2rem;
+      font-weight: 800;
+      font-family: 'Courier New', monospace;
+      letter-spacing: 6px;
+      text-align: center;
+      color: #fff;
+      margin: 8px 0;
+      user-select: all;
+    }
+    
+    .pin-code.revealed {
+      color: #00d9a5;
+      letter-spacing: 8px;
+    }
+    
+    .pin-meta {
+      display: flex;
+      justify-content: space-between;
+      color: #9ca3af;
+      font-size: 11px;
+      margin-bottom: 12px;
+    }
+    
+    .pin-reveal-btn {
+      width: 100%;
+      background: transparent;
+      color: #ffc107;
+      border: 1px dashed #ffc107;
+      padding: 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .pin-reveal-btn:hover {
+      background: rgba(255, 193, 7, 0.1);
+    }
+    
+    .pin-reveal-btn:active {
+      background: #ffc107;
+      color: #1a1a2e;
+    }
+    
+    /* ← NOVO: Access Info Box */
+    .access-info {
+      background: linear-gradient(135deg, #16213e, #1a1a2e);
+      border: 1px solid #00d9a5;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 12px;
+      animation: slideIn 0.3s ease;
+      display: none;
+    }
+    
+    .access-info.visible {
+      display: block;
+    }
+    
+    .access-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #00d9a5;
+      font-weight: 700;
+      font-size: 13px;
+      margin-bottom: 12px;
+    }
+    
+    .access-url-box {
+      background: #0f3460;
+      border-radius: 8px;
+      padding: 10px;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .access-url {
+      flex: 1;
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+      color: #fff;
+      word-break: break-all;
+      user-select: all;
+    }
+    
+    .access-copy-btn {
+      background: #00d9a5;
+      color: #1a1a2e;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+      white-space: nowrap;
+    }
+    
+    .access-copy-btn:hover {
+      background: #00b88c;
+    }
+    
+    .access-qr {
+      text-align: center;
+      margin: 12px 0;
+    }
+    
+    .access-qr img {
+      max-width: 120px;
+      height: auto;
+      border-radius: 8px;
+      border: 2px solid #0f3460;
+    }
+    
+    .access-qr small {
+      display: block;
+      color: #9ca3af;
+      margin-top: 6px;
+      font-size: 10px;
+    }
+    
+    .pwa-instructions {
+      background: rgba(0, 217, 165, 0.1);
+      border-radius: 8px;
+      padding: 12px;
+      margin-top: 12px;
+    }
+    
+    .pwa-instructions h4 {
+      color: #00d9a5;
+      font-size: 12px;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    
+    .pwa-steps {
+      list-style: none;
+      font-size: 11px;
+      color: #ccc;
+    }
+    
+    .pwa-steps li {
+      margin-bottom: 4px;
+      padding-left: 16px;
+      position: relative;
+    }
+    
+    .pwa-steps li::before {
+      content: "•";
+      color: #00d9a5;
+      position: absolute;
+      left: 0;
+      font-weight: bold;
+    }
+    
+    .pwa-steps .android::before { content: "🤖"; }
+    .pwa-steps .ios::before { content: "🍎"; }
+    
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
     }
     
     /* Status Card */
@@ -262,6 +480,11 @@
     }
     
     .pulse { animation: pulse 2s infinite; }
+    
+    @keyframes slideUp {
+      from { opacity: 0; transform: translate(-50%, 20px); }
+      to { opacity: 1; transform: translate(-50%, 0); }
+    }
   </style>
 </head>
 <body>
@@ -269,9 +492,52 @@
     <!-- Header -->
     <header class="header">
       <h1>🍳 Kitchen Flow Bridge</h1>
-      <div class="version">v<span id="appVersion">2.0.0</span></div>
+      <div class="version">v<span id="appVersion">2.1.6</span></div>
       <div class="credits">CLB Studio - Celso Luiz</div>
     </header>
+
+    <!-- ← NOVO: PIN Display -->
+    <div id="pinDisplay" class="pin-display">
+      <div class="pin-header">
+        <div class="pin-title">
+          <span class="pin-icon">🔑</span>
+          <strong>PIN do Garçom</strong>
+        </div>
+        <button id="copyPinBtn" class="pin-copy-btn" title="Copiar código">📋 Copiar</button>
+      </div>
+      <div class="pin-code" id="pinCode">**--</div>
+      <div class="pin-meta">
+        <small id="pinSource">Aguardando...</small>
+        <small id="pinValid">Válido até 23:59</small>
+      </div>
+      <button id="revealPinBtn" class="pin-reveal-btn">👁️ Revelar código temporariamente</button>
+    </div>
+
+    <!-- ← NOVO: Access Info Box (URL + PWA Guide) -->
+    <div id="accessInfo" class="access-info">
+      <div class="access-title">
+        <span class="pin-icon">📱</span>
+        <strong>Acesso para Garçons</strong>
+      </div>
+      
+      <div class="access-url-box">
+        <span class="access-url" id="accessUrl">http://...</span>
+        <button id="copyUrlBtn" class="access-copy-btn">📋 Copiar</button>
+      </div>
+      
+      <div class="access-qr">
+        <img id="qrCode" src="" alt="QR Code para acesso" style="display:none">
+        <small>Escaneie para acessar rapidamente</small>
+      </div>
+      
+      <div class="pwa-instructions">
+        <h4>📲 Instalar como App (PWA)</h4>
+        <ul class="pwa-steps">
+          <li class="android"><strong>Android:</strong> Menu ⋮ → "Adicionar à tela inicial"</li>
+          <li class="ios"><strong>iPhone:</strong> Compartilhar → "Adicionar à Tela de Início"</li>
+        </ul>
+      </div>
+    </div>
 
     <!-- Status -->
     <div class="status-card">
@@ -291,6 +557,10 @@
       <div class="status-row">
         <span class="status-label">🆔 Bridge ID:</span>
         <span class="status-value" id="bridgeId">Carregando...</span>
+      </div>
+      <div class="status-row">
+        <span class="status-label">🔗 IP Local:</span>
+        <span class="status-value" id="localIp">Detectando...</span>
       </div>
     </div>
 
@@ -338,12 +608,27 @@
       testBtn: document.getElementById('testBtn'),
       clearHistoryBtn: document.getElementById('clearHistoryBtn'),
       historyList: document.getElementById('historyList'),
-      licenseLink: document.getElementById('licenseLink')
+      licenseLink: document.getElementById('licenseLink'),
+      // ← NOVO: Elementos do PIN
+      pinDisplay: document.getElementById('pinDisplay'),
+      pinCode: document.getElementById('pinCode'),
+      pinSource: document.getElementById('pinSource'),
+      pinValid: document.getElementById('pinValid'),
+      copyPinBtn: document.getElementById('copyPinBtn'),
+      revealPinBtn: document.getElementById('revealPinBtn'),
+      // ← NOVO: Elementos de Acesso
+      accessInfo: document.getElementById('accessInfo'),
+      accessUrl: document.getElementById('accessUrl'),
+      copyUrlBtn: document.getElementById('copyUrlBtn'),
+      qrCode: document.getElementById('qrCode'),
+      localIp: document.getElementById('localIp')
     };
 
     // Estado local
     let currentConfig = null;
     let currentHistory = [];
+    let revealTimeout = null;
+    let localIpAddress = '';
 
     // Inicialização
     async function init() {
@@ -353,6 +638,9 @@
         return;
       }
 
+      // Detectar IP local para montar a URL de acesso
+      detectLocalIp();
+
       // Carregar configurações
       try {
         const config = await window.bridgeAPI.getConfig();
@@ -361,6 +649,17 @@
       } catch (e) {
         console.error('Erro ao carregar config:', e);
         els.statusText.textContent = '⚠️ Erro de conexão';
+      }
+
+      // ← NOVO: Carregar informações do PIN e acesso
+      try {
+        const pinInfo = await window.bridgeAPI.getWaiterPinInfo();
+        if (pinInfo.success && pinInfo.isToday) {
+          showPinDisplay(pinInfo);
+          showAccessInfo();
+        }
+      } catch (e) {
+        console.log('PIN info não disponível ainda:', e.message);
       }
 
       // Carregar histórico
@@ -374,6 +673,93 @@
       checkLicense();
     }
 
+    // ← NOVO: Detectar IP local da máquina
+    async function detectLocalIp() {
+      try {
+        // Tentar via API do Bridge (se disponível)
+        const status = await window.bridgeAPI.getStatus?.();
+        if (status?.localIp) {
+          localIpAddress = status.localIp;
+        } else {
+          // Fallback: tentar via WebRTC (funciona na maioria dos navegadores)
+          const ip = await getLocalIpViaWebRTC();
+          if (ip) localIpAddress = ip;
+        }
+        
+        if (localIpAddress) {
+          els.localIp.textContent = localIpAddress;
+          updateAccessUrl();
+        }
+      } catch (e) {
+        console.warn('⚠️ Não foi possível detectar IP local:', e.message);
+        els.localIp.textContent = 'Não detectado';
+      }
+    }
+
+    // ← NOVO: Fallback para detectar IP via WebRTC
+    function getLocalIpViaWebRTC() {
+      return new Promise((resolve) => {
+        const pc = new RTCPeerConnection({ iceServers: [] });
+        pc.createDataChannel('');
+        pc.createOffer().then(offer => pc.setLocalDescription(offer));
+        
+        pc.onicecandidate = (e) => {
+          if (e?.candidate) {
+            const ipMatch = e.candidate.candidate.match(/([0-9]{1,3}(\.[0-9]{1,3}){3})/);
+            if (ipMatch?.[1] && ipMatch[1] !== '127.0.0.1') {
+              resolve(ipMatch[1]);
+              pc.close();
+            }
+          }
+        };
+        
+        // Timeout de 2 segundos
+        setTimeout(() => { pc.close(); resolve(null); }, 2000);
+      });
+    }
+
+    // ← NOVO: Atualizar URL de acesso exibida
+    function updateAccessUrl() {
+      if (!localIpAddress) return;
+      
+      const port = currentConfig?.httpPort || 4545;
+      const url = `http://${localIpAddress}:${port}/waiter.html`;
+      
+      els.accessUrl.textContent = url;
+      
+      // Gerar QR Code via API pública (opcional)
+      const qrApi = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(url)}`;
+      els.qrCode.src = qrApi;
+      els.qrCode.style.display = 'inline-block';
+      els.qrCode.onerror = () => { els.qrCode.style.display = 'none'; };
+    }
+
+    // ← NOVO: Exibir seção de acesso
+    function showAccessInfo() {
+      if (!els.accessInfo) return;
+      
+      updateAccessUrl();
+      els.accessInfo.classList.add('visible');
+    }
+
+    // ← NOVO: Exibir PIN na UI
+    function showPinDisplay(pinInfo) {
+      if (!els.pinDisplay) return;
+      
+      els.pinCode.textContent = pinInfo.maskedPin;
+      els.pinSource.textContent = pinInfo.source === 'auto' 
+        ? '🤖 Gerado automaticamente' 
+        : pinInfo.source === 'manual' 
+          ? '👤 Definido pela gerente' 
+          : '📄 Do arquivo .env';
+      els.pinValid.textContent = `Válido até 23:59`;
+      
+      els.pinDisplay.classList.add('visible');
+      
+      // Toast de notificação
+      showToast('🔑 PIN do Garçom disponível', 'info', 4000);
+    }
+
     // Atualizar UI com config
     function updateUI(config) {
       els.statusText.textContent = '✅ Online';
@@ -381,7 +767,7 @@
       els.downloadPath.textContent = config.DOWNLOAD_PATH || 'Não configurado';
       els.backendUrl.textContent = new URL(config.BACKEND_URL).hostname;
       els.bridgeId.textContent = config.bridgeId || 'N/A';
-      els.appVersion.textContent = config.version || '2.0.0';
+      els.appVersion.textContent = config.version || '2.1.6';
       els.pathInput.value = config.DOWNLOAD_PATH || '';
     }
 
@@ -421,11 +807,72 @@
 
     // Configurar listeners de botão
     function setupEventListeners() {
+      // ← NOVO: Copiar PIN
+      els.copyPinBtn?.addEventListener('click', async () => {
+        try {
+          const result = await window.bridgeAPI.getCurrentPin();
+          if (result.success && result.fullPin) {
+            await navigator.clipboard.writeText(result.fullPin);
+            showToast('📋 PIN copiado!', 'success', 2000);
+            
+            // Feedback visual no botão
+            const originalText = els.copyPinBtn.textContent;
+            els.copyPinBtn.textContent = '✅ Copiado!';
+            setTimeout(() => {
+              els.copyPinBtn.textContent = originalText;
+            }, 1500);
+          }
+        } catch (e) {
+          showToast('❌ Erro ao copiar: ' + e.message, 'error');
+        }
+      });
+
+      // ← NOVO: Revelar PIN temporariamente
+      els.revealPinBtn?.addEventListener('click', async () => {
+        try {
+          const result = await window.bridgeAPI.getCurrentPin();
+          if (result.success && result.fullPin) {
+            // Mostrar PIN completo
+            els.pinCode.textContent = result.fullPin;
+            els.pinCode.classList.add('revealed');
+            
+            // Esconder após 5 segundos
+            clearTimeout(revealTimeout);
+            revealTimeout = setTimeout(() => {
+              els.pinCode.textContent = result.maskedPin;
+              els.pinCode.classList.remove('revealed');
+            }, 5000);
+            
+            showToast('👁️ PIN visível por 5 segundos', 'warning', 3000);
+          }
+        } catch (e) {
+          showToast('❌ Erro: ' + e.message, 'error');
+        }
+      });
+
+      // ← NOVO: Copiar URL de acesso
+      els.copyUrlBtn?.addEventListener('click', async () => {
+        const url = els.accessUrl?.textContent;
+        if (url && url.startsWith('http')) {
+          try {
+            await navigator.clipboard.writeText(url);
+            showToast('🔗 URL copiada!', 'success', 2000);
+            
+            // Feedback visual
+            const originalText = els.copyUrlBtn.textContent;
+            els.copyUrlBtn.textContent = '✅ Copiado!';
+            setTimeout(() => {
+              els.copyUrlBtn.textContent = originalText;
+            }, 1500);
+          } catch (e) {
+            showToast('❌ Erro ao copiar: ' + e.message, 'error');
+          }
+        }
+      });
+
       // Alterar pasta
       els.changePathBtn.addEventListener('click', async () => {
         try {
-          // Em produção, usaria dialog nativo via IPC
-          // Aqui simulamos com prompt para desenvolvimento
           const newPath = prompt('Digite o novo caminho da pasta:', currentConfig?.DOWNLOAD_PATH);
           
           if (newPath && newPath.trim()) {
@@ -485,23 +932,39 @@
     // Configurar listeners do bridgeAPI
     function setupBridgeListeners() {
       // Histórico atualizado
-      window.bridgeAPI.onHistoryUpdated((history) => {
+      window.bridgeAPI.onHistoryUpdated?.((history) => {
         currentHistory = history;
         renderHistory();
       });
 
       // Config atualizada
-      window.bridgeAPI.onConfigUpdated((config) => {
+      window.bridgeAPI.onConfigUpdated?.((config) => {
         if (config.downloadPath) {
           els.downloadPath.textContent = config.downloadPath;
           els.pathInput.value = config.downloadPath;
         }
+        // Atualizar URL de acesso se o IP/porta mudou
+        if (config.httpPort) {
+          updateAccessUrl();
+        }
+      });
+
+      // ← NOVO: PIN atualizado
+      window.bridgeAPI.onPinUpdated?.((data) => {
+        if (data && data.maskedPin) {
+          showPinDisplay({
+            maskedPin: data.maskedPin,
+            source: data.source,
+            validFor: data.validFor
+          });
+          showAccessInfo(); // Garantir que a seção de acesso apareça
+        }
       });
 
       // Arquivo detectado
-      window.bridgeAPI.onFileDetected((data) => {
+      window.bridgeAPI.onFileDetected?.((data) => {
         console.log('📄 Arquivo detectado:', data);
-        loadHistory(); // Atualiza histórico
+        loadHistory();
       });
     }
 
@@ -520,8 +983,7 @@
     }
 
     // Mostrar toast
-    function showToast(message, type = 'info') {
-      // Cria elemento temporário
+    function showToast(message, type = 'info', duration = 3000) {
       const toast = document.createElement('div');
       toast.textContent = message;
       toast.style.cssText = `
@@ -546,7 +1008,7 @@
         toast.style.opacity = '0';
         toast.style.transition = 'opacity 0.3s';
         setTimeout(() => toast.remove(), 300);
-      }, 3000);
+      }, duration);
     }
 
     // Escape HTML
@@ -555,16 +1017,6 @@
       div.textContent = text;
       return div.innerHTML;
     }
-
-    // Adicionar animação CSS
-    const style = document.createElement('style');
-    style.textContent = `
-      @keyframes slideUp {
-        from { opacity: 0; transform: translate(-50%, 20px); }
-        to { opacity: 1; transform: translate(-50%, 0); }
-      }
-    `;
-    document.head.appendChild(style);
 
     // Iniciar
     document.addEventListener('DOMContentLoaded', init);
