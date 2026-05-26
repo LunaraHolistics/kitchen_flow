@@ -1,7 +1,7 @@
 /**
- * Kitchen Flow Monitor - Frontend Tablet v2.1.4
+ * Kitchen Flow Monitor - Frontend Tablet v2.1.5
  * Backend: https://kitchen-flow-swq2.onrender.com
- * Features: Controle por item, cancelamento com alerta, wait time por item, garçom visível, PWA reforçado
+ * Features: Prioridade Kids/Porção, observações em destaque, cache offline, controle por item, PWA reforçado
  */
 (() => {
   'use strict';
@@ -23,11 +23,17 @@
   const TIMER_WARN_THRESHOLD = 300;   // 5 min → amarelo
   const TIMER_CRITICAL_THRESHOLD = 600; // 10 min → vermelho/piscando
 
-  console.log('🔌 Kitchen Flow v2.1.4');
+  console.log('🔌 Kitchen Flow v2.1.5');
   console.log('🔌 Backend:', BACKEND_URL);
   console.log('🔌 WebSocket:', WS_URL);
 
   const SECTORS = ['Frios', 'Saladas', 'Fritadeira', 'Entradas', 'Fogão', 'Sobremesas'];
+
+  // ← NOVO: Palavras-chave para identificar itens prioritários (Kids/Porções)
+  const PRIORITY_KEYWORDS = [
+    'kids', 'infantil', 'criança', 'batata', 'porção', 'tirinhas', 'salada', 
+    'entrada', 'frango', 'nugget', 'mini', 'pequeno'
+  ];
 
   // ============================================================================
   // ESTADO GLOBAL
@@ -87,7 +93,6 @@
     cancelBanner: $('#cancelBanner'),
     cancelMessage: $('#cancelMessage'),
     cancelClose: $('#cancelClose')
-    // ← REMOVIDO: soundCancel não é mais necessário (usamos Web Audio API puro)
   };
 
   // ============================================================================
@@ -124,9 +129,68 @@
     return 'wait-slow';                        // >10min → vermelho
   }
 
-  // ← CORREÇÃO: Gerar ID único para item dentro do pedido (parâmetros corrigidos)
+  // ← NOVO: Verificar se pedido tem prioridade (Kids/Porções)
+  function isPriorityOrder(order) {
+    // Verificar categoria kids
+    if (order.categoria === 'kids' || order.categoria === 'infantil') return true;
+    
+    // ← CORREÇÃO: Verificar se item.item existe antes de chamar toLowerCase()
+    return order.itens?.some(item => 
+      item.item && PRIORITY_KEYWORDS.some(keyword => 
+        item.item.toLowerCase().includes(keyword)
+      )
+    ) || false;
+  }
+
+  // ← CORREÇÃO: Gerar ID único para item dentro do pedido
   function getItemId(orderId, setor, index) {
     return `${orderId}_${setor}_${index}`;
+  }
+
+  // ============================================================================
+  // ← NOVO: CACHE OFFLINE COM LOCALSTORAGE
+  // ============================================================================
+
+  const CACHE_KEY = 'kfm_orders_cache';
+  const CACHE_DURATION = 30 * 60 * 1000; // 30 minutos
+
+  function cacheOrders(ordersToCache) {
+    try {
+      localStorage.setItem(CACHE_KEY, JSON.stringify({
+        orders: ordersToCache,
+        timestamp: Date.now()
+      }));
+      console.log('💾 Pedidos salvos no cache offline');
+    } catch (e) {
+      console.warn('⚠️ Falha ao salvar cache:', e.message);
+    }
+  }
+
+  function loadCachedOrders() {
+    try {
+      const cached = localStorage.getItem(CACHE_KEY);
+      if (cached) {
+        const { orders: cachedOrders, timestamp } = JSON.parse(cached);
+        // Verificar se cache é recente (< 30 min)
+        if (Date.now() - timestamp < CACHE_DURATION) {
+          console.log('📦 Cache offline carregado (válido)');
+          return cachedOrders;
+        } else {
+          console.log('🗑️ Cache expirado, removendo');
+          localStorage.removeItem(CACHE_KEY);
+        }
+      }
+    } catch (e) {
+      console.warn('⚠️ Falha ao carregar cache:', e.message);
+      localStorage.removeItem(CACHE_KEY);
+    }
+    return null;
+  }
+
+  // Limpar cache manualmente (para debug)
+  function clearCache() {
+    localStorage.removeItem(CACHE_KEY);
+    console.log('🧹 Cache offline limpo');
   }
 
   // ============================================================================
@@ -408,7 +472,9 @@
   function handleServerMessage(type, data) {
     switch (type) {
       case 'INIT':
-        orders = data.orders || []; clientId = data.clientId;
+        orders = data.orders || []; 
+        clientId = data.clientId;
+        cacheOrders(orders); // ← NOVO: Salvar no cache offline
         if (clientId && els.clientId) { els.clientId.textContent = `📱 ${clientId.slice(0, 8)}`; els.clientId.title = `ID: ${clientId}`; }
         isInitialized = true; hideLoading(); renderAll(); startTimers(); break;
       case 'CONNECTED':
@@ -416,29 +482,27 @@
         if (clientId && els.clientId) els.clientId.textContent = `📱 ${clientId.slice(0, 8)}`; break;
       case 'NEW_ORDER':
         if (!orders.find(o => o.id === data.order?.id)) {
-          orders.unshift(data.order); renderAll();
+          orders.unshift(data.order); 
+          cacheOrders(orders); // ← NOVO: Atualizar cache
+          renderAll();
           toast(`🔔 Novo pedido: ${data.order.mesa}`, 'info', 3000); playDing();
         } break;
       case 'ORDER_UPDATED':
         const idx = orders.findIndex(o => o.id === data.order?.id);
         if (idx > -1) {
           console.log('📥 Pedido atualizado:', data.order.id, data.order.status);
-          orders[idx] = data.order; renderAll();
+          orders[idx] = data.order; 
+          cacheOrders(orders); // ← NOVO: Atualizar cache
+          renderAll();
           if (data.order.status === 'em-preparo') startTimers();
         } break;
-      // ← NOVO: Handler para cancelamento de pedido/item
       case 'CANCEL_ORDER':
         const { orderId, itemId, table, reason } = data.payload || {};
         console.log('🚫 Cancelamento recebido:', { orderId, itemId, table, reason });
-        
-        // Mostrar banner de alerta
         showCancelBanner(table, reason || 'Solicitação do cliente');
-        
-        // Atualizar pedido localmente
         const order = orders.find(o => o.id === orderId);
         if (order) {
           if (itemId) {
-            // Cancelar item específico
             const itemIdx = order.itens?.findIndex(i => i.id === itemId || i.item.includes(itemId));
             if (itemIdx > -1 && order.itens[itemIdx]) {
               order.itens[itemIdx].status = 'cancelled';
@@ -446,20 +510,22 @@
               order.itens[itemIdx].cancelReason = reason;
             }
           } else {
-            // Cancelar pedido inteiro
             order.status = 'cancelled';
             order.cancelledAt = new Date().toISOString();
             order.cancelReason = reason;
           }
+          cacheOrders(orders); // ← NOVO: Atualizar cache
           renderAll();
-          // Scroll até o pedido cancelado
           setTimeout(() => scrollToOrder(orderId), 500);
         }
         break;
       case 'ORDER_DELETED':
         const before = orders.length;
         orders = orders.filter(o => o.id !== data.orderId);
-        if (orders.length < before) { renderAll(); toast('🗑️ Pedido removido', 'info', 2000); } break;
+        if (orders.length < before) { 
+          cacheOrders(orders); // ← NOVO: Atualizar cache
+          renderAll(); toast('🗑️ Pedido removido', 'info', 2000); 
+        } break;
       case 'PING': send('PONG', { clientId, timestamp: Date.now() }); break;
     }
   }
@@ -470,16 +536,11 @@
 
   function showCancelBanner(table, reason) {
     cancelAlert = { table, reason, timestamp: new Date().toISOString() };
-    
     if (els.cancelBanner && els.cancelMessage) {
       els.cancelMessage.textContent = `🚫 CANCELAMENTO: ${table} • ${reason}`;
       els.cancelBanner.classList.remove('hidden');
       els.cancelBanner.classList.add('visible');
-      
-      // Tocar som de alerta (Web Audio API puro)
       playCancelAlert();
-      
-      // Auto-esconder após 15 segundos (mas manter no estado)
       setTimeout(() => {
         if (cancelAlert && els.cancelBanner) {
           els.cancelBanner.classList.remove('visible');
@@ -500,24 +561,38 @@
   function scrollToOrder(orderId) {
     const card = $(`[data-order-id="${orderId}"]`);
     if (card) {
-      // Destacar card temporariamente
       card.classList.add('highlight');
       card.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      
-      // Remover destaque após animação
       setTimeout(() => card.classList.remove('highlight'), 3000);
     }
   }
 
   // ============================================================================
-  // RENDER: Aba GERAL (com controle por item + garçom visível)
+  // RENDER: Aba GERAL (com prioridade kids + observações + cache offline)
   // ============================================================================
 
   function renderGeral() {
-    const ativos = orders.filter(o => 
-      o.status !== 'concluido' && o.status !== 'cancelled' &&
+    // ← NOVO: Filtrar delivery + bebidas + usar cache se offline
+    let ativos = orders.filter(o => 
+      o.status !== 'concluido' && 
+      o.status !== 'cancelled' &&
+      o.tipo !== 'delivery' &&  // ← Filtrar delivery
       !o.itens?.every(i => i.setor === 'Bebidas')
     );
+
+    // ← NOVO: Se não há pedidos e estamos offline, tentar carregar do cache
+    if (ativos.length === 0 && !navigator.onLine) {
+      const cached = loadCachedOrders();
+      if (cached) {
+        ativos = cached.filter(o => 
+          o.status !== 'concluido' && 
+          o.status !== 'cancelled' &&
+          o.tipo !== 'delivery' &&
+          !o.itens?.every(i => i.setor === 'Bebidas')
+        );
+        toast('📦 Modo offline: exibindo pedidos em cache', 'warning', 3000);
+      }
+    }
 
     if (els.badges.geral) {
       els.badges.geral.textContent = ativos.length;
@@ -538,14 +613,17 @@
       const isDelivery = order.tipo === 'delivery';
       const isInPrep = order.status === 'em-preparo';
       const isCancelled = order.status === 'cancelled';
+      const hasPriority = isPriorityOrder(order); // ← NOVO: Verificar prioridade
       const startedAt = order.startedAt ? new Date(order.startedAt) : null;
       const elapsed = startedAt ? Math.floor((Date.now() - startedAt.getTime()) / 1000) : 0;
       const timeClass = getTimeClass(elapsed);
 
       return `
-        <article class="order-card ${isDelivery ? 'delivery' : ''} ${isInPrep ? 'in-prep' : ''} ${isCancelled ? 'cancelled' : ''}" 
+        <article class="order-card ${isDelivery ? 'delivery' : ''} ${isInPrep ? 'in-prep' : ''} ${isCancelled ? 'cancelled' : ''} ${hasPriority ? 'priority-high' : ''}" 
                  data-order-id="${order.id}" aria-labelledby="order-title-${order.id}">
+          
           ${isCancelled ? `<div class="cancel-ribbon">🚫 CANCELADO</div>` : ''}
+          ${hasPriority ? `<div class="priority-banner">👶 PRIORIDADE: Kids/Porção</div>` : ''}
           
           <header class="order-header">
             <div>
@@ -554,6 +632,7 @@
               ${order.garcom && order.garcom !== 'Desconhecido' 
                 ? `<div class="order-garcom" title="Garçom responsável">👨‍🍳 ${escapeHtml(order.garcom)}</div>` 
                 : ''}
+              ${order.observacoes ? `<div class="order-observations">${escapeHtml(order.observacoes).toUpperCase()}</div>` : ''}
             </div>
             <div class="order-time" aria-label="Tempo de preparo">
               ${isInPrep && !isCancelled
@@ -611,12 +690,13 @@
   }
 
   // ============================================================================
-  // RENDER: Aba SETOR (com controle por item + garçom no tooltip)
+  // RENDER: Aba SETOR (com prioridade + observações)
   // ============================================================================
 
   function renderSetor() {
     const ativos = orders.filter(o => 
       o.status !== 'concluido' && o.status !== 'cancelled' &&
+      o.tipo !== 'delivery' &&  // ← Filtrar delivery
       o.itens?.some(i => i.setor !== 'Bebidas' && i.status !== 'cancelled')
     );
 
@@ -628,16 +708,19 @@
         if (it.setor === 'Bebidas' || it.status === 'cancelled') return;
         if (!bySector[it.setor]) bySector[it.setor] = {};
         if (!bySector[it.setor][it.item]) {
-          bySector[it.setor][it.item] = { total: 0, tables: [], firstStartedAt: null };
+          bySector[it.setor][it.item] = { total: 0, tables: [], firstStartedAt: null, hasPriority: false };
         }
         const item = bySector[it.setor][it.item];
         item.total += it.quantidade;
+        // ← NOVO: Marcar se tem prioridade
+        if (isPriorityOrder(order)) item.hasPriority = true;
         item.tables.push({
           mesa: order.mesa, tipo: order.tipo, qty: it.quantidade,
           orderId: order.id, status: it.status || order.status,
           startedAt: it.startedAt || order.startedAt,
           itemId: it.id, itemIndex: order.itens?.indexOf(it),
-          garcom: order.garcom // ← NOVO: Incluir garçom para tooltip
+          garcom: order.garcom,
+          observacoes: order.observacoes // ← NOVO: Incluir observações
         });
         if ((it.startedAt || order.startedAt) && (!item.firstStartedAt || new Date(it.startedAt || order.startedAt) < new Date(item.firstStartedAt))) {
           item.firstStartedAt = it.startedAt || order.startedAt;
@@ -656,7 +739,7 @@
       }, { prep: 0, waiting: 0 });
 
       return `
-        <section class="sector-card ${stats.prep > 0 ? 'has-prep' : ''}" aria-labelledby="sector-title-${sector}">
+        <section class="sector-card ${stats.prep > 0 ? 'has-prep' : ''} ${Object.values(items).some(i => i.hasPriority) ? 'has-priority' : ''}" aria-labelledby="sector-title-${sector}">
           <header class="sector-title">
             <span id="sector-title-${sector}">${sector}</span>
             <span class="badge" aria-label="${hasItems ? Object.keys(items).length : 0} tipo(s) de item">${hasItems ? Object.keys(items).length : 0}</span>
@@ -670,15 +753,20 @@
               const elapsed = data.firstStartedAt ? Math.floor((Date.now() - new Date(data.firstStartedAt).getTime()) / 1000) : 0;
               const timeClass = getTimeClass(elapsed);
               return `
-              <li class="sector-item ${temEmPreparo ? 'in-prep' : ''} ${temAguardando ? 'waiting' : ''}">
+              <li class="sector-item ${temEmPreparo ? 'in-prep' : ''} ${temAguardando ? 'waiting' : ''} ${data.hasPriority ? 'priority-item' : ''}">
                 <div class="item-name">
                   <span>${escapeHtml(name)}</span>
                   <span style="color:var(--accent);font-weight:800" aria-label="Quantidade total">x${data.total}</span>
+                  ${data.hasPriority ? `<span class="priority-badge">👶</span>` : ''}
                 </div>
                 <div class="item-meta">
                   <div class="tables" role="list" aria-label="Mesas">
                     ${data.tables.map(t => {
-                      const itemTagTitle = t.garcom ? `Mesa ${t.mesa} • Garçom: ${t.garcom}` : `Mesa ${t.mesa}`;
+                      const itemTagTitle = [
+                        `Mesa ${t.mesa}`,
+                        t.garcom ? `Garçom: ${t.garcom}` : '',
+                        t.observacoes ? `OBS: ${t.observacoes.toUpperCase()}` : ''
+                      ].filter(Boolean).join(' • ');
                       return `
                       <span class="table-tag ${t.tipo} ${t.status === 'em-preparo' ? 'prep' : ''} ${t.status === 'cancelled' ? 'cancelled' : ''}" 
                             role="listitem" 
@@ -686,6 +774,7 @@
                             data-started="${t.startedAt || ''}"
                             title="${escapeHtml(itemTagTitle)}">
                         ${escapeHtml(t.mesa)} <span aria-label="quantidade">x${t.qty}</span>
+                        ${t.observacoes ? `<span class="table-obs">📝</span>` : ''}
                         ${t.status === 'em-preparo' && t.startedAt 
                           ? `<span class="mini-timer ${timeClass}" data-elapsed="${elapsed}" aria-label="Tempo em preparo: ${formatTime(elapsed)}">${formatTime(elapsed)}</span>` 
                           : t.status === 'cancelled' ? `<span class="cancelled-mini">🚫</span>` : ''}
@@ -737,7 +826,6 @@
       const startedAt = o.startedAt ? new Date(o.startedAt) : null;
       const concludedAt = o.updatedAt ? new Date(o.updatedAt) : null;
       const duration = startedAt && concludedAt ? Math.floor((concludedAt - startedAt) / 1000) : null;
-      // ← NOVO: Calcular tempos por item
       const itemTimes = o.itens?.map(it => {
         const itStart = it.startedAt ? new Date(it.startedAt) : startedAt;
         const itEnd = it.completedAt ? new Date(it.completedAt) : concludedAt;
@@ -754,6 +842,7 @@
             ${o.garcom && o.garcom !== 'Desconhecido' 
               ? `<span class="garcom-small" title="Garçom">👨‍🍳 ${escapeHtml(o.garcom)}</span>` 
               : ''}
+            ${o.observacoes ? `<span class="obs-small" title="Observação">📝 ${escapeHtml(o.observacoes).toUpperCase()}</span>` : ''}
             <span class="time">${o.horario} • ${o.itens?.length || 0} itens ${duration != null ? `• ⏱️ ${formatTime(duration)}` : ''}</span>
             ${avgItemTime != null ? `<span class="item-stats" title="Tempo médio por item">📊 Média: ${formatTime(avgItemTime)}</span>` : ''}
           </div>
@@ -854,11 +943,9 @@
       if (els.configPanel && !els.configPanel.classList.contains('hidden') && !els.configPanel.contains(e.target) && e.target !== els.openConfig) {
         els.configPanel.classList.add('hidden');
       }
-      // ← NOVO: Fechar banner de cancelamento ao clicar no X
       if (e.target === els.cancelClose) hideCancelBanner();
     });
     
-    // ← NOVO: Botão de fullscreen emergencial (se engrenagem for clicada 3x rápido)
     let configClicks = 0;
     els.openConfig?.addEventListener('dblclick', () => {
       configClicks++;
@@ -887,18 +974,12 @@
   window.startItem = (orderId, itemIndex) => {
     const order = orders.find(o => o.id === orderId);
     if (!order?.itens?.[itemIndex]) return;
-    
     const item = order.itens[itemIndex];
     const agora = getServerTime().toISOString();
-    
-    // Atualizar localmente
     item.status = 'em-preparo';
     item.startedAt = agora;
-    
     renderAll(); startTimers();
     toast(`▶ ${item.item} em produção`, 'success', 1500);
-    
-    // Enviar para backend
     send('UPDATE_ITEM_STATUS', {
       orderId, itemId: getItemId(orderId, item.setor, itemIndex),
       status: 'em-preparo', startedAt: agora, timestamp: agora
@@ -908,32 +989,21 @@
   window.completeItem = (orderId, itemIndex) => {
     const order = orders.find(o => o.id === orderId);
     if (!order?.itens?.[itemIndex]) return;
-    
     const item = order.itens[itemIndex];
     const agora = getServerTime().toISOString();
-    
-    // Calcular tempo de preparo
     const started = item.startedAt ? new Date(item.startedAt).getTime() : Date.now();
     const prepTime = Math.floor((Date.now() - started) / 1000);
-    
-    // Atualizar localmente
     item.status = 'concluido';
     item.completedAt = agora;
     item.prepTime = prepTime;
-    
     renderAll();
     toast(`✅ ${item.item} pronto! (${formatTime(prepTime)})`, 'success', 1500);
-    
-    // Enviar para backend
     send('UPDATE_ITEM_STATUS', {
       orderId, itemId: getItemId(orderId, item.setor, itemIndex),
       status: 'concluido', completedAt: agora, prepTime, timestamp: agora
     });
-    
-    // Verificar se todos os itens do pedido estão concluídos
     const allDone = order.itens.every(i => i.status === 'concluido' || i.setor === 'Bebidas');
     if (allDone && order.status !== 'concluido') {
-      // Marcar pedido como concluído automaticamente
       order.status = 'concluido';
       order.updatedAt = agora;
       send('UPDATE_STATUS', { orderId, status: 'concluido', concludedAt: agora });
@@ -974,7 +1044,7 @@
   };
 
   window.startSector = (sector) => {
-    const aguardando = orders.filter(o => o.status !== 'concluido' && o.status !== 'cancelled' && o.itens?.some(i => i.setor === sector && i.status !== 'cancelled'));
+    const aguardando = orders.filter(o => o.status !== 'concluido' && o.status !== 'cancelled' && o.tipo !== 'delivery' && o.itens?.some(i => i.setor === sector && i.status !== 'cancelled'));
     if (aguardando.length === 0) { toast(`Nada para iniciar em ${sector}`, 'warning'); return; }
     console.log(`▶ Iniciando setor ${sector}: ${aguardando.length} pedido(s)`);
     showModal(`Iniciar ${aguardando.length} pedido(s) em ${sector}?`, () => {
@@ -1054,16 +1124,43 @@
   // ============================================================================
 
   function init() {
-    console.log('🚀 Inicializando Kitchen Flow v2.1.4...');
+    console.log('🚀 Inicializando Kitchen Flow v2.1.5...');
     startClock(); setupTabs(); setupConfigPanel(); setupSound(); setupTouchOptimizations();
+    
+    // ← NOVO: Tentar carregar do cache se estiver offline na inicialização
+    if (!navigator.onLine) {
+      const cached = loadCachedOrders();
+      if (cached) {
+        orders = cached;
+        console.log('📦 Iniciando com cache offline');
+        isInitialized = true;
+        hideLoading();
+        renderAll();
+        startTimers();
+      }
+    }
+    
     connect();
-    window.KFM = { orders, ws, send, renderAll, startTimers, playDing, playCancelAlert, toast, syncTimeWithServer, getServerTime, tryFullscreen };
+    window.KFM = { orders, ws, send, renderAll, startTimers, playDing, playCancelAlert, toast, syncTimeWithServer, getServerTime, tryFullscreen, clearCache };
     console.log('✅ Kitchen Flow inicializado');
     console.log('📊 Comandos disponíveis: window.KFM');
+    console.log('💾 Cache offline: use window.KFM.clearCache() para limpar');
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
+
+  // ← NOVO: Listener para mudança de status de conexão
+  window.addEventListener('online', () => {
+    console.log('🟢 Conexão restaurada');
+    toast('🟢 Conexão restaurada - sincronizando...', 'success', 3000);
+    if (ws?.readyState !== WebSocket.OPEN) connect();
+  });
+  
+  window.addEventListener('offline', () => {
+    console.log('🔴 Conexão perdida - usando cache');
+    toast('🔴 Offline - usando pedidos em cache', 'warning', 5000);
+  });
 
   window.addEventListener('beforeunload', () => { stopTimers(); if (ws?.readyState === WebSocket.OPEN) ws.close(); });
 

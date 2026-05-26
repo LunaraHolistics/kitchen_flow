@@ -1,0 +1,256 @@
+:root {
+  /* Cores consistentes com app principal */
+  --bg: #1a1a2e;
+  --card: #16213e;
+  --accent: #e94560;
+  --success: #00d9a5;
+  --warn: #ffc107;
+  --text: #eee;
+  --muted: #aaa;
+  
+  /* Cores de marca externas */
+  --whatsapp: #25D366;
+
+  /* Layout mobile */
+  --radius: 16px;
+  --shadow: 0 4px 20px rgba(0,0,0,0.4);
+}
+
+/* Reset e base */
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+body {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  text-align: center;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  /* ← NOVO: Entrada suave da página */
+  animation: fadeIn 0.5s ease;
+}
+
+/* Esconder barra de rolagem para aparência de app */
+::-webkit-scrollbar {
+  width: 0px;
+  background: transparent;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* GIF Container */
+.gif-container {
+  margin: 15px 0 25px;
+  padding: 10px;
+  background: var(--card);
+  border-radius: var(--radius);
+  border: 2px solid #333;
+  max-width: 280px;
+  width: 100%;
+}
+
+.gif {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  display: block;
+  margin: 0 auto;
+}
+
+.gif-caption {
+  margin-top: 10px;
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-style: italic;
+  line-height: 1.4;
+}
+
+/* Títulos e Texto */
+h1 {
+  color: var(--accent);
+  font-size: 1.5rem;
+  font-weight: 800;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  line-height: 1.3;
+}
+
+.mobile-msg {
+  color: var(--text);
+  font-size: 1.05rem;
+  margin-bottom: 20px;
+  line-height: 1.5;
+  max-width: 320px;
+}
+
+/* Status Box Simplificado */
+.status-box.simple {
+  background: var(--card);
+  padding: 16px;
+  border-radius: var(--radius);
+  border-left: 4px solid var(--accent);
+  margin-bottom: 25px;
+  text-align: left;
+  width: 100%;
+  max-width: 320px;
+}
+
+/* Help Section */
+.help-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 25px;
+  width: 100%;
+  max-width: 320px;
+}
+
+.help-card {
+  background: var(--card);
+  padding: 14px;
+  border-radius: var(--radius);
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  text-align: left;
+}
+
+.help-icon {
+  font-size: 1.5rem;
+  flex-shrink: 0;
+}
+
+.help-card strong {
+  color: var(--text);
+  font-size: 0.95rem;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.help-card p {
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.4;
+  margin: 0;
+}
+
+/* Botão WhatsApp */
+.btn-whatsapp {
+  background: var(--whatsapp); /* ← Usando variável */
+  color: #fff;
+  border: none;
+  padding: 16px 24px;
+  border-radius: var(--radius);
+  font-size: 1.05rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 320px;
+  transition: background 0.2s ease, transform 0.1s;
+  box-shadow: var(--shadow);
+}
+
+.btn-whatsapp:active {
+  transform: scale(0.98);
+  background: #1ebc57;
+}
+
+.btn-whatsapp:hover {
+  background: #1ebc57;
+}
+
+/* Nota de Segurança */
+.security-note {
+  margin-top: 25px;
+  padding: 12px;
+  background: rgba(255, 193, 7, 0.1);
+  border-radius: 8px;
+  border-left: 3px solid var(--warn);
+  max-width: 320px;
+  width: 100%;
+}
+
+.security-note small {
+  color: var(--muted);
+  line-height: 1.5;
+  display: block;
+}
+
+/* Footer */
+.mobile-footer {
+  margin-top: auto;
+  padding-top: 20px;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+/* Touch optimizations */
+@media (hover: none) and (pointer: coarse) {
+  .btn-whatsapp {
+    padding: 18px 24px;
+    font-size: 1.1rem;
+  }
+  
+  .help-card {
+    padding: 16px;
+  }
+}
+
+/* Landscape mobile */
+@media (max-height: 500px) and (orientation: landscape) {
+  body {
+    padding: 12px;
+    justify-content: flex-start;
+    min-height: auto;
+  }
+  
+  .gif-container {
+    margin: 10px 0 15px;
+    max-width: 200px;
+  }
+  
+  h1 {
+    font-size: 1.3rem;
+  }
+  
+  .mobile-msg {
+    font-size: 0.95rem;
+  }
+  
+  .mobile-footer {
+    display: none; /* Esconder footer em landscape para ganhar espaço */
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Accessibility */
+:focus-visible {
+  outline: 2px solid var(--success);
+  outline-offset: 2px;
+}
+
+button:focus:not(:focus-visible) {
+  outline: none;
+}

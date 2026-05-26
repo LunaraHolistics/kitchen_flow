@@ -2,6 +2,7 @@ const LicenseManager = require('./license-manager');
 const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, Notification, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const moment = require('moment');
 const Watcher = require('./watcher');
@@ -18,7 +19,7 @@ function loadEnvConfig() {
     path.join(__dirname, '..', '.env'),
     path.join(app.getAppPath(), '.env')
   ];
-  
+
   for (const envPath of possiblePaths) {
     if (fs.existsSync(envPath)) {
       console.log(`📄 Carregando .env de: ${envPath}`);
@@ -37,7 +38,7 @@ loadEnvConfig();
 // ============================================================================
 const APP_META = {
   name: 'Kitchen Flow Bridge',
-  version: '2.1.2',
+  version: '2.1.6',
   author: 'CLB Studio - by Celso Luiz',
   description: 'Bridge para monitorar downloads do Saipos'
 };
@@ -69,11 +70,11 @@ function loadMenuMap() {
       menuMap = external;
       menuSource = 'external';
       return true;
-    } catch(e) {
+    } catch (e) {
       console.error('❌ Erro ao carregar menu externo:', e.message);
     }
   }
-  
+
   if (fs.existsSync(MENU_MAP_BUNDLED)) {
     try {
       const bundled = JSON.parse(fs.readFileSync(MENU_MAP_BUNDLED, 'utf8'));
@@ -81,11 +82,11 @@ function loadMenuMap() {
       menuMap = bundled;
       menuSource = 'bundled';
       return true;
-    } catch(e) {
+    } catch (e) {
       console.error('❌ Erro ao carregar menu embutido:', e.message);
     }
   }
-  
+
   console.warn('⚠️ Nenhum cardápio encontrado. Usando estrutura vazia.');
   return false;
 }
@@ -109,6 +110,24 @@ let isQuitting = false;
 const BRIDGE_ID = uuidv4().slice(0, 8);
 const BACKUP_DIR = path.join(process.env.USERPROFILE || 'C:\\', 'KitchenFlow', 'backup');
 
+// ← NOVO: Cache de pedidos ativos para o endpoint do garçom
+let activeOrdersCache = [];
+const CACHE_TTL = 5000; // 5 segundos
+let lastCacheUpdate = 0;
+
+// ← NOVO: Sistema de PIN Diário para Página do Garçom (com pin-state.json)
+const PIN_STATE_FILE = path.join(app.getPath('userData'), 'pin-state.json');
+const PIN_HISTORY_FILE = path.join(app.getPath('userData'), 'pin-history.json');
+const MAX_PIN_HISTORY = 7;
+
+let currentPinState = {
+  pin: null,
+  validFor: null,
+  generatedAt: null,
+  source: 'auto',
+  lastNotified: null
+};
+
 // ============================================================================
 // SISTEMA DE HISTÓRICO DE DOWNLOADS
 // ============================================================================
@@ -125,17 +144,17 @@ function addToHistory(filename, status, filePath, message = '') {
     timestamp: new Date().toISOString(),
     bridgeId: BRIDGE_ID
   };
-  
+
   downloadHistory.unshift(entry);
-  
+
   if (downloadHistory.length > MAX_HISTORY_ITEMS) {
     downloadHistory = downloadHistory.slice(0, MAX_HISTORY_ITEMS);
   }
-  
+
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('history-updated', downloadHistory);
   }
-  
+
   console.log(`📋 Histórico: ${status.toUpperCase()} - ${filename}`);
 }
 
@@ -186,8 +205,272 @@ setInterval(() => {
         }
       });
     }
-  } catch(e) {}
+  } catch (e) { }
 }, 60 * 60 * 1000);
+
+// ============================================================================
+// ← NOVO: FUNÇÕES PARA GERENCIAR PIN DIÁRIO (com pin-state.json)
+// ============================================================================
+
+function getTodayDate() {
+  return new Date().toISOString().split('T')[0];
+}
+
+// Carregar estado do PIN do arquivo
+function loadPinState() {
+  try {
+    if (fs.existsSync(PIN_STATE_FILE)) {
+      const state = JSON.parse(fs.readFileSync(PIN_STATE_FILE, 'utf8'));
+      // Validar se ainda é para hoje
+      if (state.validFor === getTodayDate()) {
+        currentPinState = state;
+        log('INFO', `🔑 PIN carregado do estado: **${state.pin?.slice(-2)} (${state.source})`);
+        return true;
+      }
+    }
+  } catch (e) {
+    log('WARN', `Falha ao carregar estado do PIN: ${e.message}`);
+  }
+  return false;
+}
+
+// Salvar estado do PIN no arquivo
+function savePinState() {
+  try {
+    fs.writeFileSync(PIN_STATE_FILE, JSON.stringify(currentPinState, null, 2), 'utf8');
+  } catch (e) {
+    log('WARN', `Falha ao salvar estado do PIN: ${e.message}`);
+  }
+}
+
+function loadPinHistory() {
+  try {
+    if (fs.existsSync(PIN_HISTORY_FILE)) {
+      return JSON.parse(fs.readFileSync(PIN_HISTORY_FILE, 'utf8'));
+    }
+  } catch (e) {
+    log('WARN', `Falha ao carregar histórico de PINs: ${e.message}`);
+  }
+  return [];
+}
+
+function savePinHistory(history) {
+  try {
+    const trimmed = history.slice(-MAX_PIN_HISTORY);
+    fs.writeFileSync(PIN_HISTORY_FILE, JSON.stringify(trimmed, null, 2), 'utf8');
+  } catch (e) {
+    log('WARN', `Falha ao salvar histórico de PINs: ${e.message}`);
+  }
+}
+
+function isPinUsedRecently(pin, history) {
+  return history.some(entry => entry.pin === pin);
+}
+
+function generateUniquePin() {
+  const history = loadPinHistory();
+  let attempts = 0;
+  const maxAttempts = 100;
+  
+  while (attempts < maxAttempts) {
+    const pin = Math.floor(1000 + Math.random() * 9000).toString();
+    if (!isPinUsedRecently(pin, history)) {
+      return pin;
+    }
+    attempts++;
+  }
+  return Date.now().toString().slice(-4);
+}
+
+// ← NOVO: Gerar PIN e notificar a UI automaticamente
+function generateAndNotifyPin() {
+  if (currentPinState.pin && currentPinState.validFor === getTodayDate()) {
+    return currentPinState.pin;
+  }
+  
+  const newPin = generateUniquePin();
+  
+  currentPinState = {
+    pin: newPin,
+    validFor: getTodayDate(),
+    generatedAt: new Date().toISOString(),
+    source: 'auto',
+    lastNotified: new Date().toISOString()
+  };
+  
+  savePinState();
+  
+  // Notificar janela principal
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('pin-updated', {
+      pin: newPin,
+      maskedPin: `**${newPin.slice(-2)}`,
+      source: 'auto',
+      validFor: getTodayDate(),
+      message: '🔑 PIN gerado automaticamente. Compartilhe com a equipe!'
+    });
+  }
+  
+  showNotification('PIN do Garçom Gerado', `Código: **${newPin.slice(-2)} • Válido até 23:59`, 'info');
+  log('INFO', `🔑 PIN automático gerado: ${newPin} • UI notificada`);
+  return newPin;
+}
+
+function getWaiterPin() {
+  // Primeiro tentar carregar do estado persistido
+  if (loadPinState() && currentPinState.pin) {
+    return currentPinState.pin;
+  }
+  
+  const today = getTodayDate();
+  
+  // Verificar .env como fallback
+  const envPin = process.env.KFM_WAITER_PIN;
+  if (envPin && /^\d{4}$/.test(envPin)) {
+    const history = loadPinHistory();
+    if (!isPinUsedRecently(envPin, history)) {
+      currentPinState = {
+        pin: envPin,
+        validFor: today,
+        generatedAt: new Date().toISOString(),
+        source: 'env',
+        lastNotified: null
+      };
+      savePinState();
+      log('INFO', `🔑 PIN carregado do .env: ${envPin}`);
+      return envPin;
+    }
+  }
+  
+  // Gerar novo PIN único
+  return generateAndNotifyPin();
+}
+
+function setWaiterPin(newPin) {
+  if (!/^\d{4}$/.test(newPin)) {
+    return { success: false, error: 'PIN deve ter exatamente 4 dígitos' };
+  }
+  
+  const history = loadPinHistory();
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toISOString().split('T')[0];
+  const yesterdayEntry = history.find(h => h.date === yesterdayStr);
+  
+  if (yesterdayEntry && yesterdayEntry.pin === newPin) {
+    return { success: false, error: 'PIN não pode ser igual ao de ontem. Escolha outro código.' };
+  }
+  
+  if (isPinUsedRecently(newPin, history)) {
+    return { success: false, error: 'Este PIN já foi usado recentemente. Escolha outro código.' };
+  }
+  
+  // Atualizar estado
+  currentPinState = {
+    pin: newPin,
+    validFor: getTodayDate(),
+    generatedAt: new Date().toISOString(),
+    source: 'manual',
+    lastNotified: new Date().toISOString()
+  };
+  savePinState();
+  
+  // Salvar no histórico
+  history.push({ date: getTodayDate(), pin: newPin, generated: false });
+  savePinHistory(history);
+  
+  // Notificar UI
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('pin-updated', {
+      pin: newPin,
+      maskedPin: `**${newPin.slice(-2)}`,
+      source: 'manual',
+      validFor: getTodayDate(),
+      message: '✅ PIN atualizado pela gerente'
+    });
+  }
+  
+  log('INFO', `🔑 PIN manual definido: ${newPin} • UI notificada`);
+  return { success: true, message: 'PIN atualizado com sucesso' };
+}
+
+function getWaiterPinInfo() {
+  // Garantir que há PIN válido
+  if (!currentPinState.pin || currentPinState.validFor !== getTodayDate()) {
+    loadPinState();
+  }
+  
+  const history = loadPinHistory();
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toISOString().split('T')[0];
+  const yesterdayPin = history.find(h => h.date === yesterdayStr)?.pin;
+  
+  return {
+    success: true,
+    maskedPin: `**${currentPinState.pin?.slice(-2) || '??'}`,
+    validUntil: currentPinState.validFor || getTodayDate(),
+    isToday: currentPinState.validFor === getTodayDate(),
+    source: currentPinState.source,
+    yesterdayPin: yesterdayPin ? `**${yesterdayPin.slice(-2)}` : null,
+    historyCount: history.length
+  };
+}
+
+// ============================================================================
+// ← NOVO: FUNÇÕES PARA O ENDPOINT DO GARÇOM
+// ============================================================================
+
+// ← NOVO: Verificar se item tem prioridade (Kids/Porções)
+function isPriorityItem(itemName) {
+  const keywords = ['kids', 'infantil', 'criança', 'batata', 'porção', 'tirinhas', 'salada', 'entrada', 'frango', 'nugget', 'mini'];
+  const lower = itemName.toLowerCase();
+  return keywords.some(kw => lower.includes(kw));
+}
+
+// ← NOVO: Obter pedidos ativos (com cache de 5s para performance)
+function getActiveOrders() {
+  const now = Date.now();
+
+  // Retornar cache se válido
+  if (activeOrdersCache.length > 0 && (now - lastCacheUpdate) < CACHE_TTL) {
+    return activeOrdersCache;
+  }
+
+  // Carregar do histórico recente (últimos 30 min)
+  const recentHistory = downloadHistory.filter(h =>
+    h.status === 'success' &&
+    (now - new Date(h.timestamp).getTime()) < 30 * 60 * 1000
+  );
+
+  // Mapear para estrutura simplificada
+  activeOrdersCache = recentHistory.map(entry => {
+    // Tentar extrair dados do message (formato: "Mesa X • Y itens")
+    const mesaMatch = entry.message?.match(/Mesa\s*(\d+)/i);
+    const itensMatch = entry.message?.match(/(\d+)\s*itens?/i);
+
+    return {
+      id: entry.id,
+      mesa: mesaMatch ? `Mesa ${mesaMatch[1]}` : 'Desconhecida',
+      status: 'em-preparo', // Simplificado: assume em preparo se está no histórico recente
+      garcom: 'Desconhecido', // Será preenchido pelo parser se disponível
+      tipo: 'salao',
+      timestamp: entry.timestamp,
+      itens: [], // Será preenchido se tivermos os dados completos
+      hasPriority: false // Será calculado abaixo
+    };
+  });
+
+  lastCacheUpdate = now;
+  return activeOrdersCache;
+}
+
+// ← NOVO: Atualizar cache quando novo pedido é processado
+function updateActiveOrdersCache(orderData) {
+  activeOrdersCache = [];
+  lastCacheUpdate = 0;
+  // Força recarregamento na próxima chamada
+}
 
 // ============================================================================
 // PARSER SAIPos V2.1
@@ -199,13 +482,13 @@ function parseSaiposFile(filePath) {
 
     const decodedBuffer = Buffer.from(rawContent, 'base64');
     const decodedJson = decodedBuffer.toString('utf8');
-    
+
     const dataArray = JSON.parse(decodedJson);
     const data = Array.isArray(dataArray) ? dataArray[0] : dataArray;
 
     if (!data.printRows) { console.warn('⚠️ Sem printRows'); return null; }
 
-    const cleanRows = data.printRows.map(row => 
+    const cleanRows = data.printRows.map(row =>
       row.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim()
     );
 
@@ -227,7 +510,7 @@ function parseSaiposFile(filePath) {
     });
 
     return { mesa, garcom, itemsRaw, fullData: data };
-  } catch(e) {
+  } catch (e) {
     console.error('❌ Falha ao parsear:', e.message);
     return null;
   }
@@ -247,10 +530,10 @@ function generateOrderFromParsedData(parsedData) {
   parsedData.itemsRaw.forEach(rawItem => {
     const match = rawItem.match(/^(\d+)\s+(.+)/);
     if (!match) return;
-    
+
     const qty = parseInt(match[1]);
     const descricao = match[2].toLowerCase().trim();
-    
+
     let matchedPrato = null;
     for (const [key, prato] of Object.entries(menuMap.pratos)) {
       const pratoKey = key.toLowerCase();
@@ -267,7 +550,9 @@ function generateOrderFromParsedData(parsedData) {
           setor: comp.setor,
           item: comp.item,
           quantidade: (comp.quantidade || 1) * qty,
-          original: rawItem
+          original: rawItem,
+          // ← NOVO: Marcar prioridade no item
+          priority: isPriorityItem(comp.item)
         });
       });
       if (matchedPrato.categoria && menuMap.acompanhamentos_fixos_por_categoria?.[matchedPrato.categoria]) {
@@ -277,7 +562,8 @@ function generateOrderFromParsedData(parsedData) {
             setor: acc.setor,
             item: acc.item,
             quantidade: (acc.quantidade || 1) * qty,
-            original: rawItem
+            original: rawItem,
+            priority: isPriorityItem(acc.item)
           });
         });
       }
@@ -287,7 +573,8 @@ function generateOrderFromParsedData(parsedData) {
         setor: 'Fogão',
         item: rawItem,
         quantidade: qty,
-        original: rawItem
+        original: rawItem,
+        priority: isPriorityItem(rawItem)
       });
     }
   });
@@ -297,7 +584,9 @@ function generateOrderFromParsedData(parsedData) {
     garcom: parsedData.garcom,
     tipo: 'salao',
     itens: itensFinais,
-    rawItems: parsedData.itemsRaw
+    rawItems: parsedData.itemsRaw,
+    // ← NOVO: Marcar se pedido tem prioridade
+    hasPriority: itensFinais.some(i => i.priority)
   };
 }
 
@@ -305,7 +594,8 @@ function generateRandomFallback() {
   return {
     mesa: `Mesa ${Math.floor(Math.random() * 20) + 1}`,
     tipo: 'salao',
-    itens: [{ uuid: uuidv4(), setor: 'Fogão', item: 'Pedido Genérico', quantidade: 1 }]
+    itens: [{ uuid: uuidv4(), setor: 'Fogão', item: 'Pedido Genérico', quantidade: 1, priority: false }],
+    hasPriority: false
   };
 }
 
@@ -315,10 +605,10 @@ function generateRandomFallback() {
 async function handleNewFile(originalPath, source = 'watcher') {
   const fileName = path.basename(originalPath);
   log('INFO', `📄 Detectado (${source}): ${fileName}`);
-  
+
   ensureBackupDir();
   const backupPath = path.join(BACKUP_DIR, `${moment().format('YYYYMMDD_HHmmss')}_${fileName}`);
-  
+
   try {
     // ← CORREÇÃO #4: Verificar se arquivo existe ANTES de processar
     if (!fs.existsSync(originalPath)) {
@@ -328,12 +618,17 @@ async function handleNewFile(originalPath, source = 'watcher') {
       showNotification('Arquivo não processado', 'Antivírus pode ter bloqueado o arquivo', 'warning');
       return;
     }
-    
+
+    // ← NOVO: Se nenhum PIN foi definido para hoje, gerar e notificar automaticamente
+    if (!currentPinState.pin || currentPinState.validFor !== getTodayDate()) {
+      generateAndNotifyPin();
+    }
+
     // ← CORREÇÃO #4: Retry logic para copiar arquivo (antivírus pode travar acesso)
     let copySuccess = false;
     let copyError = null;
     const maxRetries = 3;
-    
+
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         fs.copyFileSync(originalPath, backupPath);
@@ -343,14 +638,14 @@ async function handleNewFile(originalPath, source = 'watcher') {
       } catch (err) {
         copyError = err;
         console.warn(`⚠️ Tentativa ${attempt}/${maxRetries} falhou ao copiar: ${err.message}`);
-        
+
         if (attempt < maxRetries) {
           // Aguardar antes de retry
           await new Promise(resolve => setTimeout(resolve, 300));
         }
       }
     }
-    
+
     if (!copySuccess) {
       const errorMsg = `Falha ao criar backup após ${maxRetries} tentativas: ${copyError?.message || 'Erro desconhecido'}`;
       log('ERROR', errorMsg);
@@ -358,7 +653,7 @@ async function handleNewFile(originalPath, source = 'watcher') {
       showNotification('Erro ao processar pedido', 'Falha ao salvar backup', 'error');
       return;
     }
-    
+
     // Parsear arquivo de backup (não o original)
     const parsedData = parseSaiposFile(backupPath);
     if (!parsedData) {
@@ -366,17 +661,20 @@ async function handleNewFile(originalPath, source = 'watcher') {
       addToHistory(fileName, 'error', originalPath, 'Falha ao parsear conteúdo');
       return;
     }
-    
+
     log('INFO', `✅ Pedido extraído: ${parsedData.mesa} | Garçom: ${parsedData.garcom} | ${parsedData.itemsRaw.length} itens`);
-    
+
     // Gerar ordem
     const orderData = generateOrderFromParsedData(parsedData);
     await sendOrderToBackend(backupPath, orderData);
-    
+
+    // ← NOVO: Atualizar cache do endpoint do garçom
+    updateActiveOrdersCache(orderData);
+
     // Notificar sucesso
     showNotification('Pedido Capturado!', `📋 ${orderData.mesa} • ${parsedData.garcom} • ${orderData.itens.length} componentes`);
     addToHistory(fileName, 'success', originalPath, `${orderData.mesa} • ${orderData.itens.length} itens`);
-    
+
     // Remover original APÓS processamento bem-sucedido (apenas se veio do watcher)
     if (source === 'watcher' && fs.existsSync(originalPath)) {
       try {
@@ -387,19 +685,19 @@ async function handleNewFile(originalPath, source = 'watcher') {
         // Não falhar o processo se não conseguir deletar
       }
     }
-    
+
   } catch (error) {
     // ← CORREÇÃO #4: Log detalhado para diagnóstico de antivírus
     const errorCode = error.code || 'UNKNOWN';
     const isAntivirusRelated = ['ENOENT', 'EPERM', 'EACCES', 'EBUSY'].includes(errorCode);
-    
+
     log('ERROR', `Falha no pipeline: ${error.message} (código: ${errorCode})`);
-    
+
     if (isAntivirusRelated) {
       console.error('🛡️ Possível interferência de antivírus detectada!');
       console.error('💡 Sugestão: Adicionar exclusão para pasta de downloads e extensão .saiposprt');
     }
-    
+
     addToHistory(fileName, 'error', originalPath, `${error.message} [${errorCode}]`);
     showNotification('Erro ao processar pedido', error.message, 'error');
   }
@@ -415,25 +713,25 @@ async function sendOrderToBackend(filePath, mockData) {
     mockData,
     bridgeId: BRIDGE_ID,
     timestamp: moment().toISOString(),
-    parserVersion: '2.1.2'
+    parserVersion: '2.1.6'
   };
-  
-  const headers = { 'Content-Type': 'application/json', 'User-Agent': 'KitchenFlowBridge/2.1.2' };
+
+  const headers = { 'Content-Type': 'application/json', 'User-Agent': 'KitchenFlowBridge/2.1.6' };
   if (CONFIG.API_KEY) headers['X-API-Key'] = CONFIG.API_KEY;
 
   try {
-    const response = await fetch(url, { 
-      method: 'POST', 
-      headers, 
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
       body: JSON.stringify(payload),
       timeout: 10000
     });
-    
+
     if (!response.ok) {
       const errorText = await response.text();
       throw new Error(`HTTP ${response.status}: ${errorText}`);
     }
-    
+
     return response.json();
   } catch (err) {
     console.error('❌ Falha ao enviar para backend:', err.message);
@@ -447,15 +745,15 @@ async function sendOrderToBackend(filePath, mockData) {
 function showNotification(title, body, urgency = 'info') {
   try {
     if (Notification.isSupported()) {
-      new Notification({ 
-        title, 
-        body, 
-        icon: path.join(__dirname, 'icon.png'), 
+      new Notification({
+        title,
+        body,
+        icon: path.join(__dirname, 'icon.png'),
         silent: urgency === 'error',
         urgency: urgency
       }).show();
     }
-  } catch(e) {
+  } catch (e) {
     console.log('⚠️ Notificação não exibida:', e.message);
   }
   if (tray) tray.setToolTip(`Kitchen Flow: ${title}`);
@@ -471,7 +769,7 @@ function createWindow() {
     mainWindow.focus();
     return;
   }
-  
+
   mainWindow = new BrowserWindow({
     width: 420,
     height: 340,
@@ -489,14 +787,14 @@ function createWindow() {
     resizable: false,
     autoHideMenuBar: true
   });
-  
+
   mainWindow.loadFile('index.html');
-  
+
   if (process.argv.includes('--dev') || process.env.NODE_ENV === 'development') {
     mainWindow.show();
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   }
-  
+
   mainWindow.on('close', (e) => {
     if (!isQuitting) {
       e.preventDefault();
@@ -504,7 +802,7 @@ function createWindow() {
     }
     return false;
   });
-  
+
   mainWindow.on('ready-to-show', () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('config-loaded', {
@@ -544,12 +842,12 @@ function createBlockWindow() {
 // ============================================================================
 function createTray() {
   const iconPath = path.join(__dirname, 'icon.png');
-  let icon = fs.existsSync(iconPath) 
-    ? nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 }) 
+  let icon = fs.existsSync(iconPath)
+    ? nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 })
     : nativeImage.createEmpty();
-  
+
   tray = new Tray(icon);
-  
+
   const contextMenu = Menu.buildFromTemplate([
     {
       label: '👁️ Mostrar Painel',
@@ -580,7 +878,7 @@ function createTray() {
           title: 'Selecione a pasta para monitorar downloads',
           defaultPath: CONFIG.DOWNLOAD_PATH
         });
-        
+
         if (!result.canceled && result.filePaths[0]) {
           const newPath = result.filePaths[0];
           await updateDownloadPath(newPath);
@@ -606,6 +904,32 @@ function createTray() {
         });
       }
     },
+    {
+      label: '🔑 Definir PIN do Garçom',
+      click: async () => {
+        const result = await dialog.showInputBox({
+          title: 'Definir PIN de Acesso',
+          message: 'Digite o código de 4 dígitos para acesso dos garçons hoje:',
+          default: '',
+          type: 'text',
+          properties: ['noLink', 'normalizeAccessKeys']
+        });
+
+        if (result.response === 0 && result.input) {
+          const pinResult = setWaiterPin(result.input);
+          if (pinResult.success) {
+            showNotification('✅ PIN Atualizado', `Código: **${result.input.slice(-2)}`, 'success');
+          } else {
+            dialog.showMessageBox({
+              type: 'warning',
+              title: 'PIN Inválido',
+              message: pinResult.error,
+              detail: 'Escolha um código de 4 dígitos diferente dos últimos 7 dias.'
+            });
+          }
+        }
+      }
+    },
     { type: 'separator' },
     { label: `📁 Monitora: ${path.basename(CONFIG.DOWNLOAD_PATH)}`, enabled: false },
     { label: `💾 Backup: ${path.basename(BACKUP_DIR)}`, enabled: false },
@@ -620,10 +944,10 @@ function createTray() {
       }
     }
   ]);
-  
+
   tray.setContextMenu(contextMenu);
   tray.setToolTip('Kitchen Flow Bridge - Pronto');
-  
+
   tray.on('click', () => {
     if (mainWindow) {
       if (mainWindow.isVisible()) {
@@ -650,18 +974,18 @@ async function updateDownloadPath(newPath) {
       return { success: false, error: e.message };
     }
   }
-  
+
   CONFIG.DOWNLOAD_PATH = newPath;
   process.env.KFM_DOWNLOAD_PATH = newPath;
-  
+
   const possibleEnvPaths = [
     path.join(process.resourcesPath, '.env'),
     path.join(__dirname, '.env'),
     path.join(app.getAppPath(), '.env')
   ];
-  
+
   const envContent = `KFM_BACKEND_URL=${CONFIG.BACKEND_URL}\nKFM_DOWNLOAD_PATH=${newPath}\n`;
-  
+
   for (const envPath of possibleEnvPaths) {
     try {
       if (fs.existsSync(path.dirname(envPath))) {
@@ -673,15 +997,15 @@ async function updateDownloadPath(newPath) {
       log('WARN', `Não foi possível escrever em ${envPath}: ${e.message}`);
     }
   }
-  
+
   if (watcher) watcher.stop();
   startWatcher();
   createTray();
-  
+
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('config-updated', { downloadPath: newPath });
   }
-  
+
   log('INFO', `📁 Pasta de download atualizada: ${newPath}`);
   return { success: true, path: newPath };
 }
@@ -699,36 +1023,121 @@ function startWatcher() {
     }
   }
   watcher = new Watcher(CONFIG.DOWNLOAD_PATH, { onNewFile: handleNewFile });
-  log('INFO', `✅ V2.1.2 Ativo | Monitorando: ${CONFIG.DOWNLOAD_PATH}`);
+  log('INFO', `✅ V2.1.6 Ativo | Monitorando: ${CONFIG.DOWNLOAD_PATH}`);
 }
 
 // ============================================================================
-// SERVIDOR HTTP PARA EXTENSÃO DO NAVEGADOR
+// SERVIDOR HTTP PARA EXTENSÃO DO NAVEGADOR + GARÇOM
 // ============================================================================
 function startHttpServer() {
   httpServer = http.createServer(async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    
+
     if (req.method === 'OPTIONS') {
       res.writeHead(200);
       res.end();
       return;
     }
-    
+
+    // ← NOVO: Endpoint para página do garçom consultar PIN
+    if (req.url === '/api/waiter/pin' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        success: true,
+        pin: getWaiterPin(),
+        validUntil: getTodayDate()
+      }));
+      return;
+    }
+
+    // ← NOVO: Endpoint para página do garçom listar garçons
+    if (req.url === '/api/waiter/waiters' && req.method === 'GET') {
+      try {
+        // Extrair garçons únicos do histórico recente
+        const recentHistory = downloadHistory.filter(h =>
+          h.status === 'success' &&
+          h.message &&
+          (Date.now() - new Date(h.timestamp).getTime()) < 7 * 24 * 60 * 60 * 1000 // 7 dias
+        );
+
+        const waiters = [...new Set(
+          recentHistory
+            .map(h => {
+              const match = h.message?.match(/Garçom:\s*([^\•]+)/i);
+              return match ? match[1].trim() : null;
+            })
+            .filter(Boolean)
+        )].sort();
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, waiters }));
+
+      } catch (e) {
+        log('ERROR', `Erro no endpoint /api/waiter/waiters: ${e.message}`);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: e.message }));
+      }
+      return;
+    }
+
+    // ← NOVO: Endpoint para página do garçom consultar pedidos
+    if (req.url.startsWith('/api/waiter/orders') && req.method === 'GET') {
+      try {
+        const url = new URL(req.url, `http://${req.headers.host}`);
+        const garcomFilter = url.searchParams.get('garcom');
+
+        // Obter pedidos ativos (com cache)
+        const orders = getActiveOrders();
+
+        // Filtrar por garçom se especificado
+        const filtered = garcomFilter
+          ? orders.filter(o => o.garcom?.toLowerCase() === garcomFilter.toLowerCase())
+          : orders;
+
+        // ← NOVO: Enriquecer dados com prioridade e status simplificado
+        const enriched = filtered.map(order => ({
+          ...order,
+          // Calcular prioridade baseado nos itens
+          hasPriority: order.itens?.some(i => i.priority) || false,
+          // Status simplificado para mobile
+          statusDisplay: order.status === 'concluido' ? 'Pronto' :
+            order.status === 'em-preparo' ? 'Em preparo' : 'Pendente',
+          // Tempo desde o pedido
+          elapsedMinutes: Math.floor((Date.now() - new Date(order.timestamp).getTime()) / 60000)
+        }));
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          success: true,
+          orders: enriched,
+          timestamp: new Date().toISOString(),
+          total: enriched.length,
+          filtered: !!garcomFilter
+        }));
+
+      } catch (e) {
+        log('ERROR', `Erro no endpoint /api/waiter/orders: ${e.message}`);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: e.message }));
+      }
+      return;
+    }
+
+    // Endpoint: POST /api/download (recebe captura da extensão)
     if (req.url === '/api/download' && req.method === 'POST') {
       let body = '';
-      
+
       req.on('data', chunk => { body += chunk.toString(); });
-      
+
       req.on('end', async () => {
         try {
           const data = JSON.parse(body);
           const { filename, filePath, timestamp } = data;
-          
+
           log('INFO', `📥 Extensão capturou: ${filename}`);
-          
+
           if (filePath && fs.existsSync(filePath)) {
             await handleNewFile(filePath, 'extension');
             addToHistory(filename, 'extension', filePath, 'Capturado pela extensão');
@@ -736,41 +1145,52 @@ function startHttpServer() {
             log('WARN', `Arquivo não encontrado: ${filePath}`);
             addToHistory(filename || 'unknown', 'error', filePath || '', 'Arquivo não encontrado');
           }
-          
+
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: true, message: 'Processado' }));
-          
+
         } catch (e) {
           log('ERROR', `Erro ao processar da extensão: ${e.message}`);
           res.writeHead(500, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: e.message }));
         }
       });
-      
-    } else if (req.url === '/api/history' && req.method === 'GET') {
+
+    }
+    // Endpoint: GET /api/history (retorna histórico para extensão)
+    else if (req.url === '/api/history' && req.method === 'GET') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ success: true, history: getHistory().slice(0, 50) }));
-      
-    } else if (req.url === '/api/status' && req.method === 'GET') {
+      res.end(JSON.stringify({
+        success: true,
+        history: getHistory().slice(0, 50) // Últimos 50
+      }));
+
+    }
+    // Endpoint: GET /api/status (health check)
+    else if (req.url === '/api/status' && req.method === 'GET') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ 
-        success: true, 
+      res.end(JSON.stringify({
+        success: true,
         bridgeId: BRIDGE_ID,
         watching: watcher?.isActive || false,
         downloadPath: CONFIG.DOWNLOAD_PATH,
         timestamp: new Date().toISOString()
       }));
-      
-    } else {
+
+    }
+    // 404 para outras rotas
+    else {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       res.end('Kitchen Flow Bridge API - Endpoint not found');
     }
   });
-  
+
   httpServer.listen(4545, 'localhost', () => {
     log('INFO', `🌐 API HTTP rodando em http://localhost:4545`);
+    log('INFO', `📱 Endpoint do garçom: GET /api/waiter/orders?garcom=Nome`);
+    log('INFO', `🔑 Endpoint do PIN: GET /api/waiter/pin`);
   });
-  
+
   httpServer.on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
       log('WARN', '⚠️ Porta 4545 já em uso. Tentando 4546...');
@@ -788,8 +1208,8 @@ function startHttpServer() {
 // IPC HANDLERS
 // ============================================================================
 
-ipcMain.handle('get-config', () => ({ 
-  ...CONFIG, 
+ipcMain.handle('get-config', () => ({
+  ...CONFIG,
   bridgeId: BRIDGE_ID,
   menuLoaded: Object.keys(menuMap.pratos || {}).length > 0,
   version: APP_META.version
@@ -829,13 +1249,13 @@ ipcMain.handle('set-download-path', async (event, newPath) => {
 // ← NOVO: Endpoint para diagnóstico de antivírus
 ipcMain.handle('check-antivirus-exclusions', async () => {
   const downloadPath = CONFIG.DOWNLOAD_PATH;
-  
+
   try {
     // Testar escrita na pasta
     const testFile = path.join(downloadPath, `.kfm_test_${Date.now()}.tmp`);
     fs.writeFileSync(testFile, 'test');
     fs.unlinkSync(testFile);
-    
+
     return {
       canWrite: true,
       path: downloadPath,
@@ -849,6 +1269,70 @@ ipcMain.handle('check-antivirus-exclusions', async () => {
       code: e.code,
       message: 'Possível bloqueio por antivírus'
     };
+  }
+});
+
+// ← NOVO: Endpoint para listar garçons únicos (para o select da página do garçom)
+ipcMain.handle('get-waiters-list', () => {
+  const waiters = [...new Set(
+    downloadHistory
+      .filter(h => h.status === 'success' && h.message?.includes('Garçom:'))
+      .map(h => {
+        const match = h.message?.match(/Garçom:\s*([^\•]+)/i);
+        return match ? match[1].trim() : null;
+      })
+      .filter(Boolean)
+  )];
+
+  return { success: true, waiters };
+});
+
+// ← NOVO: IPC para definir PIN do garçom (via interface do Bridge)
+ipcMain.handle('set-waiter-pin', (event, newPin) => {
+  return setWaiterPin(newPin);
+});
+
+// ← NOVO: IPC para obter informações do PIN (para exibir na UI)
+ipcMain.handle('get-waiter-pin-info', () => {
+  return getWaiterPinInfo();
+});
+
+// ← NOVO: IPC para obter PIN atual (para a UI copiar)
+ipcMain.handle('get-current-pin', () => {
+  if (!currentPinState.pin || currentPinState.validFor !== getTodayDate()) {
+    loadPinState();
+  }
+  
+  return {
+    success: true,
+    fullPin: currentPinState.pin,
+    maskedPin: `**${currentPinState.pin?.slice(-2) || '??'}`,
+    source: currentPinState.source,
+    validFor: currentPinState.validFor
+  };
+});
+
+// ← NOVO: IPC para limpar histórico de PINs (apenas para debug/admin)
+ipcMain.handle('clear-pin-history', () => {
+  try {
+    if (fs.existsSync(PIN_HISTORY_FILE)) {
+      fs.unlinkSync(PIN_HISTORY_FILE);
+    }
+    if (fs.existsSync(PIN_STATE_FILE)) {
+      fs.unlinkSync(PIN_STATE_FILE);
+    }
+    currentPinState = {
+      pin: null,
+      validFor: null,
+      generatedAt: null,
+      source: 'auto',
+      lastNotified: null
+    };
+    log('INFO', '🧹 Histórico de PINs limpo');
+    return { success: true };
+  } catch (e) {
+    log('ERROR', `Falha ao limpar histórico de PINs: ${e.message}`);
+    return { success: false, error: e.message };
   }
 });
 
@@ -866,7 +1350,7 @@ app.whenReady().then(() => {
     app.quit();
     return;
   }
-  
+
   app.on('second-instance', () => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
@@ -874,36 +1358,39 @@ app.whenReady().then(() => {
       mainWindow.focus();
     }
   });
-  
+
   const licStatus = LicenseManager.checkStatus();
   console.log(`🔐 Status da Licença: ${licStatus.type} | ID: ${licStatus.machineId}`);
-  
+
   if (!licStatus.valid) {
     log('ERROR', '🚫 Sistema Bloqueado: Período de teste expirado');
     showNotification('Sistema Bloqueado', 'Período de teste expirado. Ative para continuar.', 'error');
     createBlockWindow();
     return;
   }
-  
+
   if (licStatus.type === 'trial') {
     log('INFO', `🧪 Modo Teste: ${licStatus.daysLeft} dias restantes`);
     showNotification(`Teste: ${licStatus.daysLeft} dias restantes`, 'Entre em contato para ativar.', 'info');
   }
-  
-  log('INFO', '🚀 Kitchen Flow Bridge V2.1.2 iniciando...');
-  
+
+  log('INFO', '🚀 Kitchen Flow Bridge V2.1.6 iniciando...');
+
+  // ← NOVO: Inicializar PIN do garçom no startup
+  getWaiterPin();
+
   createTray();
   createWindow();
   startWatcher();
   startHttpServer();
-  
-  showNotification('Kitchen Flow V2.1.2', 'Parser Real + Extensão + Antivírus Fix • Pronto');
+
+  showNotification('Kitchen Flow V2.1.6', 'PIN Diário + Notificações PWA + Anti-Repetição • Pronto');
 });
 
 // ============================================================================
 // LIFECYCLE
 // ============================================================================
-app.on('window-all-closed', () => {});
+app.on('window-all-closed', () => { });
 
 app.on('before-quit', () => {
   isQuitting = true;
@@ -922,12 +1409,18 @@ process.on('SIGINT', () => {
 // ============================================================================
 // EXPORTS
 // ============================================================================
-module.exports = { 
-  CONFIG, 
-  BRIDGE_ID, 
+module.exports = {
+  CONFIG,
+  BRIDGE_ID,
   handleNewFile,
   parseSaiposFile,
   generateOrderFromParsedData,
   getHistory,
-  updateDownloadPath
+  updateDownloadPath,
+  // ← NOVO: Exportar para testes
+  getActiveOrders,
+  isPriorityItem,
+  getWaiterPin,
+  setWaiterPin,
+  getWaiterPinInfo
 };

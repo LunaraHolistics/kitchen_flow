@@ -353,6 +353,8 @@ body {
   transition: all 0.3s ease;
   position: relative;
   animation: cardAppear 0.4s ease;
+  /* ← CORREÇÃO #2: Permitir que o banner de prioridade "saia" visualmente */
+  overflow: visible;
 }
 
 /* ← NOVO: Animação de aparecimento do card */
@@ -909,6 +911,16 @@ body {
   display: block;
 }
 
+/* ← NOVO: Observações em concluídos */
+.completed-item .obs-small {
+  font-size: 0.75rem;
+  color: var(--warn);
+  font-weight: 700;
+  margin-top: 2px;
+  display: block;
+  text-transform: uppercase;
+}
+
 .completed-item .expand-icon {
   font-size: 1.2rem;
   color: var(--muted);
@@ -1212,13 +1224,16 @@ body {
 
 .highlight { animation: highlight 1s ease; }
 
-/* ← Estados de prioridade visual */
+/* ← CORREÇÃO #1: Estados de prioridade visual CONSOLIDADOS */
 .order-card.priority-high {
-  box-shadow: 0 0 0 2px var(--accent), var(--shadow-lg);
+  border: 2px solid var(--warn);
+  box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.3), var(--shadow-lg);
+  overflow: visible; /* ← CORREÇÃO #2: Permitir overflow para o banner */
 }
 
 .order-card.priority-high .order-mesa {
-  color: var(--accent);
+  color: var(--warn);
+  font-weight: 900;
 }
 
 /* ← NOVO: Estilo para nome do garçom no card */
@@ -1235,6 +1250,72 @@ body {
 .order-garcom::before {
   content: "👨‍🍳";
   font-size: 0.9rem;
+}
+
+/* ← NOVO: Banner de prioridade no topo do card */
+.priority-banner {
+  background: linear-gradient(135deg, var(--warn), #f59e0b);
+  color: #000;
+  padding: 6px 12px;
+  border-radius: 8px 8px 0 0;
+  margin: -16px -16px 12px -16px; /* Estende para as bordas do card */
+  font-weight: 800;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  animation: pulse-priority 2s ease-in-out infinite;
+}
+
+@keyframes pulse-priority {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.4); }
+  50% { box-shadow: 0 0 0 8px rgba(255, 193, 7, 0); }
+}
+
+/* ← NOVO: Badge de prioridade em itens */
+.priority-badge {
+  background: var(--warn);
+  color: #000;
+  padding: 2px 8px;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  margin-left: 8px;
+}
+
+/* ← NOVO: Observações em destaque */
+.order-observations {
+  font-size: 0.8rem;
+  color: var(--warn);
+  font-weight: 800;
+  text-transform: uppercase;
+  margin-top: 4px;
+  letter-spacing: 0.5px;
+  background: rgba(255, 193, 7, 0.1);
+  padding: 4px 8px;
+  border-radius: 4px;
+  border-left: 3px solid var(--warn);
+  /* ← CORREÇÃO #3: Quebrar palavras longas para evitar overflow */
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+/* ← NOVO: Indicador de observação em tags de setor */
+.table-obs {
+  font-size: 0.7rem;
+  margin-left: 4px;
+  opacity: 0.8;
+}
+
+/* ← NOVO: Setor com itens prioritários */
+.sector-card.has-priority {
+  border: 2px solid var(--warn);
+  box-shadow: 0 0 15px rgba(255, 193, 7, 0.2);
+}
+
+.sector-item.priority-item {
+  border-left-color: var(--warn);
+  background: rgba(255, 193, 7, 0.05);
 }
 
 /* Touch optimizations para tablets */
@@ -1276,6 +1357,15 @@ body {
   /* ← NOVO: Garçom legível em touch */
   .order-garcom {
     font-size: 0.9rem;
+  }
+  
+  /* ← NOVO: Prioridade legível em touch */
+  .priority-banner {
+    font-size: 0.9rem;
+    padding: 8px 12px;
+  }
+  .order-observations {
+    font-size: 0.85rem;
   }
 }
 
@@ -1343,6 +1433,11 @@ body {
   .order-garcom {
     margin-top: 6px;
   }
+  
+  /* ← NOVO: Prioridade com espaçamento em portrait */
+  .priority-banner {
+    margin: -12px -12px 10px -12px;
+  }
 }
 
 /* Print styles */
@@ -1377,6 +1472,17 @@ body {
   .order-garcom {
     color: #000;
     font-size: 10pt;
+  }
+  
+  /* ← NOVO: Prioridade visível em impressão */
+  .priority-banner {
+    background: #ffc107 !important;
+    color: #000 !important;
+    border: 1px solid #000;
+  }
+  .order-observations {
+    color: #000;
+    font-weight: 700;
   }
 }
 
