@@ -1,38 +1,13 @@
-{
+﻿{
   "name": "kitchen-flow-frontend",
-  "version": "2.1.1",
-  "description": "Monitor de pedidos para cozinha - Kitchen Flow",
+  "version": "2.1.6",
   "private": true,
-  "author": "CLB Studio - by Celso Luiz",
-  "license": "UNLICENSED",
-  "type": "module",
-  "engines": {
-    "node": ">=18.0.0",
-    "npm": ">=9.0.0"
-  },
-  "browserslist": [
-    "defaults",
-    "iOS >= 12",
-    "Android >= 8"
-  ],
   "scripts": {
-    "dev": "serve -l 3000 --no-clipboard --single",
-    "start": "npm run dev",
-    "build": "echo '✅ Frontend estático pronto - arquivos em /'",
-    "preview": "serve -l 3000 --no-clipboard --single",
-    "lint": "echo '🔍 Verificação estática: OK'",
-    "format": "echo '✨ Formatação: OK'",
-    "vercel-build": "echo '🚀 Build para Vercel concluído'"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
   },
   "devDependencies": {
-    "serve": "^14.2.1"
-  },
-  "keywords": [
-    "kitchen",
-    "restaurant",
-    "orders",
-    "tablet",
-    "saipos"
-  ],
-  "homepage": "https://kitchen-flow-frontend.vercel.app"
+    "vite": "^5.0.0"
+  }
 }
