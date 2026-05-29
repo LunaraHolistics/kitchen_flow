@@ -1,7 +1,7 @@
-﻿[build]
+[build]
   base = "frontend"
   publish = "."
-  command = "echo '✅ Deploy estático concluído'"
+  command = "echo '? Build est?tico conclu?do'"
 
 [[redirects]]
   from = "/*"
