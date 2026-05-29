@@ -1,6 +1,7 @@
 /**
- * Kitchen Flow Monitor - Frontend Tablet v2.1.5
- * Backend: https://kitchen-flow-swq2.onrender.com
+ * Kitchen Flow Monitor - Frontend Tablet v2.1.6
+ * Deploy: https://cozinha-master.netlify.app
+ * Backend: Configurável (local ou cloud)
  * Features: Prioridade Kids/Porção, observações em destaque, cache offline, controle por item, PWA reforçado
  */
 (() => {
@@ -11,21 +12,56 @@
   // ============================================================================
 
   const getBackendUrl = () => {
+    // 1. Prioridade: Parâmetro na URL (ex: ?backend=http://192.168.1.100:4545)
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlBackend = urlParams.get('backend');
+    if (urlBackend && urlBackend.startsWith('http')) {
+      console.log('🔌 Backend definido via URL:', urlBackend);
+      return urlBackend;
+    }
+
+    // 2. Prioridade: localStorage (configuração salva pelo usuário)
     const saved = localStorage.getItem('kfm_backend_url');
-    if (saved && saved.startsWith('http')) return saved;
-    return 'https://kitchen-flow-swq2.onrender.com';
+    if (saved && saved.startsWith('http')) {
+      console.log('🔌 Backend carregado do localStorage:', saved);
+      return saved;
+    }
+
+    // 3. Prioridade: Detectar ambiente
+    const isNetlify = window.location.hostname.includes('netlify.app') || 
+                      window.location.hostname.includes('netlify.com');
+    
+    if (isNetlify) {
+      // Ambiente Netlify: tentar IPs comuns de rede local
+      const localIps = [
+        'http://192.168.0.100:4545',
+        'http://192.168.1.100:4545',
+        'http://10.0.0.100:4545',
+        'http://localhost:4545' // Fallback último
+      ];
+      console.log('🌐 Ambiente Netlify detectado. Tentando IPs locais:', localIps);
+      return localIps[0]; // Retorna o primeiro, o fallback é tratado na conexão
+    }
+
+    // 4. Default: localhost (desenvolvimento)
+    return 'http://localhost:4545';
   };
 
   const BACKEND_URL = getBackendUrl();
-  const WS_URL = BACKEND_URL.replace('http', 'ws').replace('https', 'wss');
+  // Converter HTTP para WebSocket (suporta localhost e IPs)
+  const WS_URL = BACKEND_URL
+    .replace('http://', 'ws://')
+    .replace('https://', 'wss://');
 
   // Limites para alertas visuais de tempo (em segundos)
   const TIMER_WARN_THRESHOLD = 300;   // 5 min → amarelo
   const TIMER_CRITICAL_THRESHOLD = 600; // 10 min → vermelho/piscando
 
-  console.log('🔌 Kitchen Flow v2.1.5');
+  console.log('🔌 Kitchen Flow v2.1.6');
+  console.log('🔌 Frontend URL:', window.location.href);
   console.log('🔌 Backend:', BACKEND_URL);
   console.log('🔌 WebSocket:', WS_URL);
+  console.log('🔌 Ambiente:', window.location.hostname.includes('netlify') ? 'Netlify (Cloud)' : 'Local/Dev');
 
   const SECTORS = ['Frios', 'Saladas', 'Fritadeira', 'Entradas', 'Fogão', 'Sobremesas'];
 
@@ -212,7 +248,12 @@
         console.log('🕐 Horário sincronizado. Offset:', serverTimeOffset, 'ms');
       }
     } catch (e) {
-      console.warn('⚠️ Não foi possível sincronizar horário:', e.message);
+      // Silencioso para não poluir logs em produção
+      if (window.location.hostname.includes('netlify')) {
+        console.debug('⚠️ Sync de horário indisponível (backend local pode estar offline)');
+      } else {
+        console.warn('⚠️ Não foi possível sincronizar horário:', e.message);
+      }
       serverTimeOffset = 0;
     }
   }
@@ -395,42 +436,79 @@
   }
 
   // ============================================================================
-  // WEBSOCKET: Conexão e Mensagens
+  // WEBSOCKET: Conexão Inteligente com Fallback
   // ============================================================================
 
   function connect() {
-    console.log(`🔌 Conectando WebSocket: ${WS_URL}`);
+    console.log(`🔌 Tentando conectar WebSocket: ${WS_URL}`);
     els.loadingStatus?.textContent = 'Conectando...';
-    try {
-      ws = new WebSocket(WS_URL);
-    } catch (e) {
-      console.error('❌ Erro ao inicializar WebSocket:', e);
-      updateConnectionStatus(false); scheduleReconnect(); return;
-    }
-    ws.onopen = () => {
-      console.log('✅ WebSocket conectado');
-      updateConnectionStatus(true); reconnectAttempts = 0;
-      els.loadingStatus?.textContent = 'Sincronizando...';
-      toast('🟢 Conectado ao servidor', 'info', 2000);
-      syncTimeWithServer();
-    };
-    ws.onclose = (event) => {
-      console.log(`🔌 WebSocket desconectado (code: ${event.code})`);
-      updateConnectionStatus(false);
-      if (isInitialized) { toast('Conexão perdida. Reconectando...', 'warning'); scheduleReconnect(); }
-    };
-    ws.onerror = (error) => {
-      console.error('❌ WebSocket error:', error);
-      updateConnectionStatus(false);
-      if (reconnectAttempts === 0 && isInitialized) toast('Erro de conexão com o servidor', 'error');
-    };
-    ws.onmessage = (event) => {
+    
+    // Lista de URLs para tentar (fallback)
+    const wsUrls = [
+      WS_URL,
+      WS_URL.replace('192.168.0.100', '192.168.1.100'),
+      WS_URL.replace('192.168.1.100', '10.0.0.100'),
+      'ws://localhost:4545'
+    ];
+    
+    let currentTry = 0;
+    
+    function tryConnect(url) {
       try {
-        const data = JSON.parse(event.data);
-        const { type, ...payload } = data;
-        handleServerMessage(type, payload);
-      } catch (err) { console.error('❌ Erro ao parsear mensagem:', err); }
-    };
+        console.log(`🔌 Tentativa ${currentTry + 1}/${wsUrls.length}: ${url}`);
+        ws = new WebSocket(url);
+      } catch (e) {
+        console.error(`❌ Erro ao inicializar WebSocket (${url}):`, e.message);
+        tryNext();
+        return;
+      }
+      
+      ws.onopen = () => {
+        console.log(`✅ WebSocket conectado em ${url}`);
+        updateConnectionStatus(true); 
+        reconnectAttempts = 0;
+        els.loadingStatus?.textContent = 'Sincronizando...';
+        toast('🟢 Conectado ao servidor', 'success', 2000);
+        syncTimeWithServer();
+      };
+      
+      ws.onclose = (event) => {
+        console.log(`🔌 WebSocket desconectado (${url}): code ${event.code}`);
+        updateConnectionStatus(false);
+        if (isInitialized) { 
+          toast('Conexão perdida. Reconectando...', 'warning'); 
+          tryNext(); 
+        }
+      };
+      
+      ws.onerror = (error) => {
+        console.error(`❌ WebSocket error (${url}):`, error);
+        // Não atualiza status aqui para não flicker, espera onclose
+      };
+      
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          const { type, ...payload } = data;
+          handleServerMessage(type, payload);
+        } catch (err) { console.error('❌ Erro ao parsear mensagem:', err); }
+      };
+    }
+    
+    function tryNext() {
+      currentTry++;
+      if (currentTry < wsUrls.length) {
+        // Tenta próxima URL após pequeno delay
+        setTimeout(() => tryConnect(wsUrls[currentTry]), 500);
+      } else {
+        // Todas as tentativas falharam
+        updateConnectionStatus(false);
+        scheduleReconnect();
+      }
+    }
+    
+    // Iniciar primeira tentativa
+    tryConnect(wsUrls[0]);
   }
 
   function updateConnectionStatus(online) {
@@ -448,21 +526,27 @@
 
   function scheduleReconnect() {
     if (reconnectAttempts >= MAX_RECONNECT) {
-      toast('Não foi possível reconectar. Recarregue a página.', 'error', 8000);
-      els.loadingStatus?.textContent = 'Falha na conexão'; return;
+      toast('Não foi possível reconectar. Verifique se o Bridge está rodando no PC do caixa.', 'error', 8000);
+      els.loadingStatus?.textContent = 'Falha na conexão'; 
+      return;
     }
     const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 10000);
     reconnectAttempts++;
     console.log(`🔄 Reconectando em ${delay}ms (tentativa ${reconnectAttempts}/${MAX_RECONNECT})`);
     els.loadingStatus?.textContent = `Reconectando em ${Math.ceil(delay / 1000)}s...`;
-    setTimeout(() => { if (!ws || ws.readyState !== WebSocket.OPEN) connect(); }, delay);
+    setTimeout(() => connect(), delay);
   }
 
   function send(type, payload = {}) {
     if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type, payload })); return true;
+      ws.send(JSON.stringify({ type, payload })); 
+      return true;
     }
-    toast('Sem conexão com o servidor', 'error'); return false;
+    // Só mostra toast se não for reconexão automática
+    if (reconnectAttempts === 0) {
+      toast('Sem conexão com o servidor. Verifique o Bridge.', 'error');
+    }
+    return false;
   }
 
   // ============================================================================
@@ -475,18 +559,28 @@
         orders = data.orders || []; 
         clientId = data.clientId;
         cacheOrders(orders); // ← NOVO: Salvar no cache offline
-        if (clientId && els.clientId) { els.clientId.textContent = `📱 ${clientId.slice(0, 8)}`; els.clientId.title = `ID: ${clientId}`; }
-        isInitialized = true; hideLoading(); renderAll(); startTimers(); break;
+        if (clientId && els.clientId) { 
+          els.clientId.textContent = `📱 ${clientId.slice(0, 8)}`; 
+          els.clientId.title = `ID: ${clientId}`; 
+        }
+        isInitialized = true; 
+        hideLoading(); 
+        renderAll(); 
+        startTimers(); 
+        break;
       case 'CONNECTED':
         clientId = data.clientId;
-        if (clientId && els.clientId) els.clientId.textContent = `📱 ${clientId.slice(0, 8)}`; break;
+        if (clientId && els.clientId) els.clientId.textContent = `📱 ${clientId.slice(0, 8)}`; 
+        break;
       case 'NEW_ORDER':
         if (!orders.find(o => o.id === data.order?.id)) {
           orders.unshift(data.order); 
           cacheOrders(orders); // ← NOVO: Atualizar cache
           renderAll();
-          toast(`🔔 Novo pedido: ${data.order.mesa}`, 'info', 3000); playDing();
-        } break;
+          toast(`🔔 Novo pedido: ${data.order.mesa}`, 'info', 3000); 
+          playDing();
+        } 
+        break;
       case 'ORDER_UPDATED':
         const idx = orders.findIndex(o => o.id === data.order?.id);
         if (idx > -1) {
@@ -495,7 +589,8 @@
           cacheOrders(orders); // ← NOVO: Atualizar cache
           renderAll();
           if (data.order.status === 'em-preparo') startTimers();
-        } break;
+        } 
+        break;
       case 'CANCEL_ORDER':
         const { orderId, itemId, table, reason } = data.payload || {};
         console.log('🚫 Cancelamento recebido:', { orderId, itemId, table, reason });
@@ -503,7 +598,7 @@
         const order = orders.find(o => o.id === orderId);
         if (order) {
           if (itemId) {
-            const itemIdx = order.itens?.findIndex(i => i.id === itemId || i.item.includes(itemId));
+            const itemIdx = order.itens?.findIndex(i => i.id === itemId || i.item?.includes(itemId));
             if (itemIdx > -1 && order.itens[itemIdx]) {
               order.itens[itemIdx].status = 'cancelled';
               order.itens[itemIdx].cancelledAt = new Date().toISOString();
@@ -524,9 +619,13 @@
         orders = orders.filter(o => o.id !== data.orderId);
         if (orders.length < before) { 
           cacheOrders(orders); // ← NOVO: Atualizar cache
-          renderAll(); toast('🗑️ Pedido removido', 'info', 2000); 
-        } break;
-      case 'PING': send('PONG', { clientId, timestamp: Date.now() }); break;
+          renderAll(); 
+          toast('🗑️ Pedido removido', 'info', 2000); 
+        } 
+        break;
+      case 'PING': 
+        send('PONG', { clientId, timestamp: Date.now() }); 
+        break;
     }
   }
 
@@ -1124,7 +1223,7 @@
   // ============================================================================
 
   function init() {
-    console.log('🚀 Inicializando Kitchen Flow v2.1.5...');
+    console.log('🚀 Inicializando Kitchen Flow v2.1.6...');
     startClock(); setupTabs(); setupConfigPanel(); setupSound(); setupTouchOptimizations();
     
     // ← NOVO: Tentar carregar do cache se estiver offline na inicialização
@@ -1145,6 +1244,13 @@
     console.log('✅ Kitchen Flow inicializado');
     console.log('📊 Comandos disponíveis: window.KFM');
     console.log('💾 Cache offline: use window.KFM.clearCache() para limpar');
+    
+    // ← NOVO: Mostrar dica de configuração se estiver no Netlify sem backend configurado
+    if (window.location.hostname.includes('netlify') && !localStorage.getItem('kfm_backend_url')) {
+      setTimeout(() => {
+        toast('⚙️ Configure o IP do Bridge nas configurações (engrenagem) para conectar.', 'warning', 8000);
+      }, 3000);
+    }
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
