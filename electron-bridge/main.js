@@ -1218,8 +1218,8 @@ function startHttpServer() {
     }
   });
 
-  httpServer.listen(4545, 'localhost', () => {
-    log('INFO', `🌐 API HTTP rodando em http://localhost:4545`);
+  httpServer.listen(4545, '0.0.0.0', () => {
+    log('INFO', `🌐 API HTTP rodando em http://0.0.0.0:4545`);
     log('INFO', `📱 Endpoint do garçom: GET /api/waiter/orders?garcom=Nome`);
     log('INFO', `🔑 Endpoint do PIN: GET /api/waiter/pin`);
     log('INFO', `📄 Servidor de arquivos: frontend/ → /waiter.html, /waiter.js, etc.`);
