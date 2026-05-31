@@ -16,10 +16,7 @@
       font-size: 13px;
     }
     
-    .container {
-      max-width: 420px;
-      margin: 0 auto;
-    }
+    .container { max-width: 420px; margin: 0 auto; }
     
     /* Header */
     .header {
@@ -28,23 +25,9 @@
       border-bottom: 2px solid #0f3460;
       margin-bottom: 16px;
     }
-    
-    .header h1 {
-      font-size: 20px;
-      color: #e94560;
-      margin-bottom: 4px;
-    }
-    
-    .header .version {
-      font-size: 11px;
-      color: #9ca3af;
-    }
-    
-    .header .credits {
-      font-size: 10px;
-      color: #6b7280;
-      margin-top: 4px;
-    }
+    .header h1 { font-size: 20px; color: #e94560; margin-bottom: 4px; }
+    .header .version { font-size: 11px; color: #9ca3af; }
+    .header .credits { font-size: 10px; color: #6b7280; margin-top: 4px; }
     
     /* ← NOVO: PIN Display */
     .pin-display {
@@ -56,206 +39,91 @@
       animation: slideIn 0.3s ease;
       display: none;
     }
-    
-    .pin-display.visible {
-      display: block;
-    }
-    
+    .pin-display.visible { display: block; }
     .pin-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 12px;
-      color: #ffc107;
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 12px; color: #ffc107;
     }
-    
-    .pin-title {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-weight: 700;
-      font-size: 13px;
-    }
-    
+    .pin-title { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 13px; }
     .pin-icon { font-size: 1.2rem; }
-    
     .pin-copy-btn {
-      background: #444;
-      color: #fff;
-      border: none;
-      padding: 4px 10px;
-      border-radius: 6px;
-      font-size: 11px;
-      cursor: pointer;
-      transition: background 0.2s;
-      display: flex;
-      align-items: center;
-      gap: 4px;
+      background: #444; color: #fff; border: none; padding: 4px 10px;
+      border-radius: 6px; font-size: 11px; cursor: pointer;
+      transition: background 0.2s; display: flex; align-items: center; gap: 4px;
     }
-    
     .pin-copy-btn:hover { background: #555; }
-    
     .pin-code {
-      font-size: 2rem;
-      font-weight: 800;
-      font-family: 'Courier New', monospace;
-      letter-spacing: 6px;
-      text-align: center;
-      color: #fff;
-      margin: 8px 0;
-      user-select: all;
+      font-size: 2rem; font-weight: 800; font-family: 'Courier New', monospace;
+      letter-spacing: 6px; text-align: center; color: #fff; margin: 8px 0; user-select: all;
     }
-    
-    .pin-code.revealed {
-      color: #00d9a5;
-      letter-spacing: 8px;
-    }
-    
+    .pin-code.revealed { color: #00d9a5; letter-spacing: 8px; }
     .pin-meta {
-      display: flex;
-      justify-content: space-between;
-      color: #9ca3af;
-      font-size: 11px;
-      margin-bottom: 12px;
+      display: flex; justify-content: space-between; color: #9ca3af;
+      font-size: 11px; margin-bottom: 12px;
     }
-    
     .pin-reveal-btn {
-      width: 100%;
-      background: transparent;
-      color: #ffc107;
-      border: 1px dashed #ffc107;
-      padding: 8px;
-      border-radius: 6px;
-      font-size: 11px;
-      cursor: pointer;
+      width: 100%; background: transparent; color: #ffc107; border: 1px dashed #ffc107;
+      padding: 8px; border-radius: 6px; font-size: 11px; cursor: pointer;
       transition: all 0.2s;
     }
-    
-    .pin-reveal-btn:hover {
-      background: rgba(255, 193, 7, 0.1);
-    }
-    
-    .pin-reveal-btn:active {
-      background: #ffc107;
-      color: #1a1a2e;
-    }
+    .pin-reveal-btn:hover { background: rgba(255, 193, 7, 0.1); }
+    .pin-reveal-btn:active { background: #ffc107; color: #1a1a2e; }
     
     /* ← NOVO: Access Info Box */
     .access-info {
       background: linear-gradient(135deg, #16213e, #1a1a2e);
-      border: 1px solid #00d9a5;
-      border-radius: 12px;
-      padding: 16px;
-      margin-bottom: 12px;
-      animation: slideIn 0.3s ease;
-      display: none;
+      border: 1px solid #00d9a5; border-radius: 12px; padding: 16px;
+      margin-bottom: 12px; animation: slideIn 0.3s ease; display: none;
     }
-    
-    .access-info.visible {
-      display: block;
-    }
-    
+    .access-info.visible { display: block; }
     .access-title {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      color: #00d9a5;
-      font-weight: 700;
-      font-size: 13px;
-      margin-bottom: 12px;
+      display: flex; align-items: center; gap: 8px; color: #00d9a5;
+      font-weight: 700; font-size: 13px; margin-bottom: 12px;
     }
-    
     .access-url-box {
-      background: #0f3460;
-      border-radius: 8px;
-      padding: 10px;
-      margin-bottom: 12px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
+      background: #0f3460; border-radius: 8px; padding: 10px;
+      margin-bottom: 12px; display: flex; align-items: center; gap: 8px;
     }
-    
     .access-url {
-      flex: 1;
-      font-family: 'Courier New', monospace;
-      font-size: 11px;
-      color: #fff;
-      word-break: break-all;
-      user-select: all;
+      flex: 1; font-family: 'Courier New', monospace; font-size: 11px;
+      color: #fff; word-break: break-all; user-select: all;
     }
-    
     .access-copy-btn {
-      background: #00d9a5;
-      color: #1a1a2e;
-      border: none;
-      padding: 6px 12px;
-      border-radius: 6px;
-      font-size: 11px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background 0.2s;
-      white-space: nowrap;
+      background: #00d9a5; color: #1a1a2e; border: none; padding: 6px 12px;
+      border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer;
+      transition: background 0.2s; white-space: nowrap;
     }
-    
-    .access-copy-btn:hover {
-      background: #00b88c;
-    }
-    
-    .access-qr {
-      text-align: center;
-      margin: 12px 0;
-    }
-    
+    .access-copy-btn:hover { background: #00b88c; }
+    .access-qr { text-align: center; margin: 12px 0; }
     .access-qr img {
-      max-width: 120px;
-      height: auto;
-      border-radius: 8px;
-      border: 2px solid #0f3460;
+      max-width: 120px; height: auto; border-radius: 8px; border: 2px solid #0f3460;
     }
+    .access-qr small { display: block; color: #9ca3af; margin-top: 6px; font-size: 10px; }
     
-    .access-qr small {
-      display: block;
-      color: #9ca3af;
-      margin-top: 6px;
-      font-size: 10px;
+    /* ← NOVO: Fallback para QR Code */
+    .qr-fallback {
+      text-align: center; padding: 10px; background: #0f3460;
+      border-radius: 8px; margin-top: 10px;
+    }
+    .qr-fallback.hidden { display: none; }
+    .qr-fallback strong {
+      color: #00d9a5; font-family: monospace; font-size: 1.1rem;
+      word-break: break-all; display: block; margin: 4px 0;
     }
     
     .pwa-instructions {
-      background: rgba(0, 217, 165, 0.1);
-      border-radius: 8px;
-      padding: 12px;
-      margin-top: 12px;
+      background: rgba(0, 217, 165, 0.1); border-radius: 8px;
+      padding: 12px; margin-top: 12px;
     }
-    
     .pwa-instructions h4 {
-      color: #00d9a5;
-      font-size: 12px;
-      margin-bottom: 8px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
+      color: #00d9a5; font-size: 12px; margin-bottom: 8px;
+      display: flex; align-items: center; gap: 6px;
     }
-    
-    .pwa-steps {
-      list-style: none;
-      font-size: 11px;
-      color: #ccc;
-    }
-    
-    .pwa-steps li {
-      margin-bottom: 4px;
-      padding-left: 16px;
-      position: relative;
-    }
-    
+    .pwa-steps { list-style: none; font-size: 11px; color: #ccc; }
+    .pwa-steps li { margin-bottom: 4px; padding-left: 16px; position: relative; }
     .pwa-steps li::before {
-      content: "•";
-      color: #00d9a5;
-      position: absolute;
-      left: 0;
-      font-weight: bold;
+      content: "•"; color: #00d9a5; position: absolute; left: 0; font-weight: bold;
     }
-    
     .pwa-steps .android::before { content: "🤖"; }
     .pwa-steps .ios::before { content: "🍎"; }
     
@@ -266,206 +134,89 @@
     
     /* Status Card */
     .status-card {
-      background: rgba(0, 217, 165, 0.1);
-      border: 1px solid #00d9a5;
-      border-radius: 8px;
-      padding: 12px;
-      margin-bottom: 12px;
+      background: rgba(0, 217, 165, 0.1); border: 1px solid #00d9a5;
+      border-radius: 8px; padding: 12px; margin-bottom: 12px;
     }
-    
     .status-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 6px;
-      font-size: 12px;
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 6px; font-size: 12px;
     }
-    
     .status-row:last-child { margin-bottom: 0; }
-    
     .status-icon {
-      width: 16px;
-      height: 16px;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 10px;
-      font-weight: bold;
+      width: 16px; height: 16px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; font-weight: bold;
     }
-    
     .status-icon.online { background: #00d9a5; color: #1a1a2e; }
     .status-icon.warning { background: #facc15; color: #1a1a2e; }
     .status-icon.error { background: #dc2626; color: white; }
-    
     .status-label { color: #9ca3af; min-width: 80px; }
     .status-value { color: #ffffff; font-weight: 500; word-break: break-all; }
     
     /* Config Section */
     .config-section {
-      background: rgba(15, 52, 96, 0.5);
-      border-radius: 8px;
-      padding: 12px;
-      margin-bottom: 12px;
+      background: rgba(15, 52, 96, 0.5); border-radius: 8px;
+      padding: 12px; margin-bottom: 12px;
     }
-    
     .config-section h3 {
-      font-size: 13px;
-      color: #00d9a5;
-      margin-bottom: 8px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
+      font-size: 13px; color: #00d9a5; margin-bottom: 8px;
+      display: flex; align-items: center; gap: 6px;
     }
-    
-    .path-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 8px;
-    }
-    
+    .path-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
     .path-row input {
-      flex: 1;
-      background: #0f3460;
-      border: 1px solid #16213e;
-      border-radius: 4px;
-      padding: 6px 8px;
-      color: #ffffff;
-      font-size: 11px;
-      font-family: 'Courier New', monospace;
+      flex: 1; background: #0f3460; border: 1px solid #16213e;
+      border-radius: 4px; padding: 6px 8px; color: #ffffff;
+      font-size: 11px; font-family: 'Courier New', monospace;
     }
-    
-    .path-row input:focus {
-      outline: none;
-      border-color: #00d9a5;
-    }
+    .path-row input:focus { outline: none; border-color: #00d9a5; }
     
     /* Buttons */
     .btn {
-      padding: 6px 12px;
-      border: none;
-      border-radius: 6px;
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: all 0.2s;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
+      padding: 6px 12px; border: none; border-radius: 6px;
+      font-size: 12px; font-weight: 600; cursor: pointer;
+      transition: all 0.2s; display: inline-flex; align-items: center; gap: 6px;
     }
-    
-    .btn-primary {
-      background: #e94560;
-      color: white;
-    }
-    
-    .btn-primary:hover {
-      background: #dc2626;
-      transform: translateY(-1px);
-    }
-    
-    .btn-secondary {
-      background: #0f3460;
-      color: #00d9a5;
-      border: 1px solid #00d9a5;
-    }
-    
-    .btn-secondary:hover {
-      background: #16213e;
-    }
-    
-    .btn-small {
-      padding: 4px 8px;
-      font-size: 11px;
-    }
-    
-    .btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-      transform: none;
-    }
-    
-    .button-row {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-    
+    .btn-primary { background: #e94560; color: white; }
+    .btn-primary:hover { background: #dc2626; transform: translateY(-1px); }
+    .btn-secondary { background: #0f3460; color: #00d9a5; border: 1px solid #00d9a5; }
+    .btn-secondary:hover { background: #16213e; }
+    .btn-small { padding: 4px 8px; font-size: 11px; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .button-row { display: flex; gap: 8px; flex-wrap: wrap; }
     .button-row .btn { flex: 1; min-width: 90px; }
     
     /* History Section */
     .history-section {
-      background: rgba(15, 52, 96, 0.5);
-      border-radius: 8px;
-      padding: 12px;
-      margin-bottom: 12px;
+      background: rgba(15, 52, 96, 0.5); border-radius: 8px;
+      padding: 12px; margin-bottom: 12px;
     }
-    
     .history-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
+      display: flex; justify-content: space-between; align-items: center;
       margin-bottom: 8px;
     }
-    
     .history-header h3 {
-      font-size: 13px;
-      color: #00d9a5;
-      display: flex;
-      align-items: center;
-      gap: 6px;
+      font-size: 13px; color: #00d9a5; display: flex;
+      align-items: center; gap: 6px;
     }
-    
-    .history-list {
-      max-height: 150px;
-      overflow-y: auto;
-      font-size: 11px;
-    }
-    
+    .history-list { max-height: 150px; overflow-y: auto; font-size: 11px; }
     .history-item {
-      background: #0f3460;
-      padding: 6px 8px;
-      border-radius: 4px;
-      margin-bottom: 4px;
-      border-left: 3px solid #00d9a5;
+      background: #0f3460; padding: 6px 8px; border-radius: 4px;
+      margin-bottom: 4px; border-left: 3px solid #00d9a5;
     }
-    
     .history-item.error { border-left-color: #dc2626; }
     .history-item.extension { border-left-color: #60a5fa; }
-    
-    .history-filename {
-      font-weight: 600;
-      color: #ffffff;
-      word-break: break-all;
-    }
-    
-    .history-meta {
-      color: #9ca3af;
-      font-size: 10px;
-      margin-top: 2px;
-    }
-    
+    .history-filename { font-weight: 600; color: #ffffff; word-break: break-all; }
+    .history-meta { color: #9ca3af; font-size: 10px; margin-top: 2px; }
     .history-empty {
-      text-align: center;
-      color: #6b7280;
-      padding: 20px;
-      font-style: italic;
+      text-align: center; color: #6b7280; padding: 20px; font-style: italic;
     }
     
     /* Footer */
     .footer {
-      text-align: center;
-      padding-top: 12px;
-      border-top: 1px solid #0f3460;
-      font-size: 10px;
-      color: #6b7280;
+      text-align: center; padding-top: 12px; border-top: 1px solid #0f3460;
+      font-size: 10px; color: #6b7280;
     }
-    
-    .footer a {
-      color: #00d9a5;
-      text-decoration: none;
-    }
+    .footer a { color: #00d9a5; text-decoration: none; }
     
     /* Scrollbar */
     ::-webkit-scrollbar { width: 6px; }
@@ -474,17 +225,26 @@
     ::-webkit-scrollbar-thumb:hover { background: #1a1a2e; }
     
     /* Animations */
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.6; }
-    }
-    
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.6; } }
     .pulse { animation: pulse 2s infinite; }
-    
     @keyframes slideUp {
       from { opacity: 0; transform: translate(-50%, 20px); }
       to { opacity: 1; transform: translate(-50%, 0); }
     }
+    
+    /* ← NOVO: Toast Notifications com classe CSS */
+    .toast-notification {
+      position: fixed; bottom: 20px; left: 50%;
+      transform: translateX(-50%) translateY(-20px);
+      padding: 10px 20px; border-radius: 8px; font-size: 12px;
+      font-weight: 600; z-index: 1000; animation: slideUp 0.3s ease;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3); opacity: 0;
+      transition: opacity 0.3s ease, transform 0.3s ease;
+    }
+    .toast-notification.success { background: #00d9a5; color: #1a1a2e; }
+    .toast-notification.error { background: #dc2626; color: white; }
+    .toast-notification.warning { background: #facc15; color: #1a1a2e; }
+    .toast-notification.info { background: #e94560; color: white; }
   </style>
 </head>
 <body>
@@ -492,7 +252,8 @@
     <!-- Header -->
     <header class="header">
       <h1>🍳 Kitchen Flow Bridge</h1>
-      <div class="version">v<span id="appVersion">2.1.6</span></div>
+      <!-- ← CORREÇÃO #1: Versão atualizada para 2.1.7 -->
+      <div class="version">v<span id="appVersion">2.1.7</span></div>
       <div class="credits">CLB Studio - Celso Luiz</div>
     </header>
 
@@ -527,6 +288,14 @@
       
       <div class="access-qr">
         <img id="qrCode" src="" alt="QR Code para acesso" style="display:none">
+        <!-- ← CORREÇÃO #2: Fallback visual para QR Code -->
+        <div id="qrFallback" class="qr-fallback hidden">
+          <small style="color:#9ca3af">QR Code indisponível</small><br>
+          <strong id="qrUrlText" style="color:#00d9a5; font-family:monospace; font-size:1.1rem; word-break:break-all">
+            http://...
+          </strong><br>
+          <small style="color:#9ca3af">Digite manualmente no celular</small>
+        </div>
         <small>Escaneie para acessar rapidamente</small>
       </div>
       
@@ -561,6 +330,8 @@
       <div class="status-row">
         <span class="status-label">🔗 IP Local:</span>
         <span class="status-value" id="localIp">Detectando...</span>
+        <!-- ← CORREÇÃO #3: Botão para re-tentar detecção de IP -->
+        <button id="retryIpBtn" class="btn btn-small btn-secondary" style="margin-left:8px" title="Re-tentar detecção">🔄</button>
       </div>
     </div>
 
@@ -621,7 +392,10 @@
       accessUrl: document.getElementById('accessUrl'),
       copyUrlBtn: document.getElementById('copyUrlBtn'),
       qrCode: document.getElementById('qrCode'),
-      localIp: document.getElementById('localIp')
+      qrFallback: document.getElementById('qrFallback'),
+      qrUrlText: document.getElementById('qrUrlText'),
+      localIp: document.getElementById('localIp'),
+      retryIpBtn: document.getElementById('retryIpBtn') // ← CORREÇÃO #3
     };
 
     // Estado local
@@ -689,10 +463,15 @@
         if (localIpAddress) {
           els.localIp.textContent = localIpAddress;
           updateAccessUrl();
+        } else {
+          els.localIp.textContent = 'Não detectado';
+          // ← CORREÇÃO #3: Mostrar botão de retry se falhar
+          if (els.retryIpBtn) els.retryIpBtn.style.display = 'inline-flex';
         }
       } catch (e) {
         console.warn('⚠️ Não foi possível detectar IP local:', e.message);
-        els.localIp.textContent = 'Não detectado';
+        els.localIp.textContent = 'Erro';
+        if (els.retryIpBtn) els.retryIpBtn.style.display = 'inline-flex';
       }
     }
 
@@ -727,11 +506,26 @@
       
       els.accessUrl.textContent = url;
       
+      // ← CORREÇÃO #2: Atualizar fallback do QR Code também
+      if (els.qrUrlText) els.qrUrlText.textContent = url;
+      
       // Gerar QR Code via API pública (opcional)
       const qrApi = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(url)}`;
       els.qrCode.src = qrApi;
       els.qrCode.style.display = 'inline-block';
-      els.qrCode.onerror = () => { els.qrCode.style.display = 'none'; };
+      
+      // ← CORREÇÃO #2: Fallback visual se QR Code falhar
+      els.qrCode.onerror = () => {
+        els.qrCode.style.display = 'none';
+        if (els.qrFallback && els.qrUrlText) {
+          els.qrUrlText.textContent = url;
+          els.qrFallback.classList.remove('hidden');
+        }
+      };
+      // Esconder fallback se QR carregar com sucesso
+      els.qrCode.onload = () => {
+        if (els.qrFallback) els.qrFallback.classList.add('hidden');
+      };
     }
 
     // ← NOVO: Exibir seção de acesso
@@ -767,7 +561,8 @@
       els.downloadPath.textContent = config.DOWNLOAD_PATH || 'Não configurado';
       els.backendUrl.textContent = new URL(config.BACKEND_URL).hostname;
       els.bridgeId.textContent = config.bridgeId || 'N/A';
-      els.appVersion.textContent = config.version || '2.1.6';
+      // ← CORREÇÃO #1: Usar versão do config ou fallback 2.1.7
+      els.appVersion.textContent = config.version || '2.1.7';
       els.pathInput.value = config.DOWNLOAD_PATH || '';
     }
 
@@ -867,6 +662,24 @@
           } catch (e) {
             showToast('❌ Erro ao copiar: ' + e.message, 'error');
           }
+        }
+      });
+
+      // ← CORREÇÃO #3: Re-tentar detecção de IP
+      els.retryIpBtn?.addEventListener('click', async () => {
+        els.retryIpBtn.disabled = true;
+        els.retryIpBtn.textContent = '⏳';
+        els.localIp.textContent = 'Detectando...';
+        
+        await detectLocalIp();
+        
+        els.retryIpBtn.disabled = false;
+        els.retryIpBtn.textContent = '🔄';
+        
+        if (localIpAddress) {
+          showToast('✅ IP detectado: ' + localIpAddress, 'success', 3000);
+        } else {
+          showToast('⚠️ Não foi possível detectar IP. Digite manualmente no tablet/garçom.', 'warning', 5000);
         }
       });
 
@@ -982,31 +795,24 @@
       }
     }
 
-    // Mostrar toast
+    // ← CORREÇÃO #4: Mostrar toast com classe CSS em vez de estilo inline
     function showToast(message, type = 'info', duration = 3000) {
       const toast = document.createElement('div');
+      toast.className = `toast-notification ${type}`;
       toast.textContent = message;
-      toast.style.cssText = `
-        position: fixed;
-        bottom: 20px;
-        left: 50%;
-        transform: translateX(-50%);
-        background: ${type === 'success' ? '#00d9a5' : type === 'error' ? '#dc2626' : type === 'warning' ? '#facc15' : '#e94560'};
-        color: ${type === 'warning' ? '#1a1a2e' : 'white'};
-        padding: 10px 20px;
-        border-radius: 8px;
-        font-size: 12px;
-        font-weight: 600;
-        z-index: 1000;
-        animation: slideUp 0.3s ease;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-      `;
-      
+      toast.setAttribute('role', 'alert');
       document.body.appendChild(toast);
       
+      // Animação de entrada
+      requestAnimationFrame(() => {
+        toast.style.opacity = '1';
+        toast.style.transform = 'translateX(-50%) translateY(0)';
+      });
+      
+      // Auto-remover
       setTimeout(() => {
         toast.style.opacity = '0';
-        toast.style.transition = 'opacity 0.3s';
+        toast.style.transform = 'translateX(-50%) translateY(-20px)';
         setTimeout(() => toast.remove(), 300);
       }, duration);
     }

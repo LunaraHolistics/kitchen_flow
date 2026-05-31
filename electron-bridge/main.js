@@ -7,6 +7,7 @@ const { v4: uuidv4 } = require('uuid');
 const moment = require('moment');
 const Watcher = require('./watcher');
 const http = require('http');
+const { exec } = require('child_process');
 const dotenv = require('dotenv');
 
 // ============================================================================
@@ -38,7 +39,7 @@ loadEnvConfig();
 // ============================================================================
 const APP_META = {
   name: 'Kitchen Flow Bridge',
-  version: '2.1.6',
+  version: '2.1.7', // ← Atualizado para versão com correções de rede
   author: 'CLB Studio - by Celso Luiz',
   description: 'Bridge para monitorar downloads do Saipos'
 };
@@ -177,6 +178,46 @@ function log(level, msg, data = null) {
   const entry = `[${moment().format('HH:mm:ss')}] [${level}] ${msg}`;
   console.log(entry);
   if (data) console.log('  →', JSON.stringify(data));
+}
+
+// ← NOVO: Função para tentar liberar firewall automaticamente (Windows)
+function tryOpenFirewallPort(port, protocol = 'TCP') {
+  if (process.platform !== 'win32') return; // Só funciona no Windows
+  
+  log('INFO', `🔐 Tentando liberar porta ${port} no firewall do Windows...`);
+  
+  const command = `netsh advfirewall firewall add rule name="KitchenFlow-Bridge-${port}" dir=in action=allow protocol=${protocol} localport=${port} profile=any`;
+  
+  exec(command, { windowsHide: true }, (error, stdout, stderr) => {
+    if (error) {
+      log('WARN', `⚠️ Não foi possível liberar firewall automaticamente: ${error.message}`);
+      log('INFO', '💡 Instrução manual: Execute como Admin no PowerShell:');
+      log('INFO', `   netsh advfirewall firewall add rule name="KitchenFlow-Bridge-${port}" dir=in action=allow protocol=${protocol} localport=${port} profile=any`);
+    } else {
+      log('INFO', `✅ Porta ${port} liberada no firewall do Windows`);
+    }
+  });
+}
+
+// ← NOVO: Verificar se porta está em uso por outro processo
+function isPortInUse(port, callback) {
+  const server = http.createServer();
+  
+  server.once('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      callback(true);
+    } else {
+      callback(false);
+    }
+    server.close();
+  });
+  
+  server.once('listening', () => {
+    server.close();
+    callback(false);
+  });
+  
+  server.listen(port, '0.0.0.0');
 }
 
 function ensureBackupDir() {
@@ -713,10 +754,10 @@ async function sendOrderToBackend(filePath, mockData) {
     mockData,
     bridgeId: BRIDGE_ID,
     timestamp: moment().toISOString(),
-    parserVersion: '2.1.6'
+    parserVersion: '2.1.7' // ← Atualizado
   };
 
-  const headers = { 'Content-Type': 'application/json', 'User-Agent': 'KitchenFlowBridge/2.1.6' };
+  const headers = { 'Content-Type': 'application/json', 'User-Agent': 'KitchenFlowBridge/2.1.7' };
   if (CONFIG.API_KEY) headers['X-API-Key'] = CONFIG.API_KEY;
 
   try {
@@ -986,7 +1027,7 @@ async function updateDownloadPath(newPath) {
 
   const envContent = `KFM_BACKEND_URL=${CONFIG.BACKEND_URL}\nKFM_DOWNLOAD_PATH=${newPath}\n`;
 
-  for (const envPath of possibleEnvPaths) {
+  for (const envPath of possiblePaths) {
     try {
       if (fs.existsSync(path.dirname(envPath))) {
         fs.writeFileSync(envPath, envContent, 'utf8');
@@ -1023,13 +1064,28 @@ function startWatcher() {
     }
   }
   watcher = new Watcher(CONFIG.DOWNLOAD_PATH, { onNewFile: handleNewFile });
-  log('INFO', `✅ V2.1.6 Ativo | Monitorando: ${CONFIG.DOWNLOAD_PATH}`);
+  log('INFO', `✅ V2.1.7 Ativo | Monitorando: ${CONFIG.DOWNLOAD_PATH}`);
 }
 
 // ============================================================================
 // SERVIDOR HTTP PARA EXTENSÃO DO NAVEGADOR + GARÇOM
 // ============================================================================
 function startHttpServer() {
+  // ← NOVO: Verificar conflito de porta antes de iniciar
+  isPortInUse(4545, (inUse) => {
+    if (inUse) {
+      log('WARN', '⚠️ Porta 4545 já em uso por outro processo. Verifique se Java, Saipos ou outro app está usando esta porta.');
+      log('INFO', '💡 Solução: O sistema tentará usar a porta 4546 automaticamente.');
+    }
+    
+    // ← NOVO: Tentar liberar firewall para a porta principal
+    tryOpenFirewallPort(4545);
+    
+    startServerOnPort(4545);
+  });
+}
+
+function startServerOnPort(port) {
   httpServer = http.createServer(async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -1218,20 +1274,21 @@ function startHttpServer() {
     }
   });
 
-  httpServer.listen(4545, '0.0.0.0', () => {
-    log('INFO', `🌐 API HTTP rodando em http://0.0.0.0:4545`);
+  httpServer.listen(port, '0.0.0.0', () => {
+    log('INFO', `🌐 API HTTP rodando em http://0.0.0.0:${port}`);
     log('INFO', `📱 Endpoint do garçom: GET /api/waiter/orders?garcom=Nome`);
     log('INFO', `🔑 Endpoint do PIN: GET /api/waiter/pin`);
     log('INFO', `📄 Servidor de arquivos: frontend/ → /waiter.html, /waiter.js, etc.`);
+    log('INFO', `🔗 URL para tablet/garçom: http://[IP-DO-PC]:${port}/waiter.html`);
   });
 
   httpServer.on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
-      log('WARN', '⚠️ Porta 4545 já em uso. Tentando 4546...');
-      httpServer.listen(4546, 'localhost', () => {
-        log('INFO', `🌐 API HTTP rodando em http://localhost:4546`);
-        CONFIG.BACKEND_URL = CONFIG.BACKEND_URL.replace('4545', '4546');
-      });
+      log('WARN', `⚠️ Porta ${port} já em uso. Tentando porta ${port === 4545 ? 4546 : 4547}...`);
+      // ← CORREÇÃO #1: Usar '0.0.0.0' também no fallback
+      const nextPort = port === 4545 ? 4546 : 4547;
+      tryOpenFirewallPort(nextPort); // ← NOVO: Tentar liberar firewall para próxima porta também
+      startServerOnPort(nextPort);
     } else {
       log('ERROR', `Erro no servidor HTTP: ${err.message}`);
     }
@@ -1408,7 +1465,7 @@ app.whenReady().then(() => {
     showNotification(`Teste: ${licStatus.daysLeft} dias restantes`, 'Entre em contato para ativar.', 'info');
   }
 
-  log('INFO', '🚀 Kitchen Flow Bridge V2.1.6 iniciando...');
+  log('INFO', '🚀 Kitchen Flow Bridge V2.1.7 iniciando...');
 
   // ← NOVO: Inicializar PIN do garçom no startup
   getWaiterPin();
@@ -1418,7 +1475,7 @@ app.whenReady().then(() => {
   startWatcher();
   startHttpServer();
 
-  showNotification('Kitchen Flow V2.1.6', 'PIN Diário + Notificações PWA + Anti-Repetição • Pronto');
+  showNotification('Kitchen Flow V2.1.7', 'Conexão externa + Firewall auto + Anti-conflito • Pronto');
 });
 
 // ============================================================================

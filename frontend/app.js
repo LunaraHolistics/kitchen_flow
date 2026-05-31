@@ -57,7 +57,7 @@
   const TIMER_WARN_THRESHOLD = 300;   // 5 min → amarelo
   const TIMER_CRITICAL_THRESHOLD = 600; // 10 min → vermelho/piscando
 
-  console.log('🔌 Kitchen Flow v2.1.6');
+  console.log('🔌 Kitchen Flow v2.1.7');
   console.log('🔌 Frontend URL:', window.location.href);
   console.log('🔌 Backend:', BACKEND_URL);
   console.log('🔌 WebSocket:', WS_URL);
