@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kitchen Flow TV - Painel de Pedidos</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #3b82f6;
+      --success: #22c55e;
+      --warn: #f59e0b;
+      --danger: #ef4444;
+      --highlight: rgba(34, 197, 94, 0.3);
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 20px;
+      border-bottom: 2px solid var(--card-bg);
+      margin-bottom: 20px;
+    }
+
+    h1 { margin: 0; font-size: 2rem; letter-spacing: 1px; }
+    .status { font-size: 1.2rem; font-weight: bold; }
+    .status.online { color: var(--success); }
+    .status.offline { color: var(--danger); }
+    .clock { font-size: 2.5rem; font-weight: bold; font-variant-numeric: tabular-nums; }
+
+    /* Board Layout */
+    .board {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 30px;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    .column {
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      overflow-y: auto;
+      padding-right: 10px;
+    }
+
+    .column-header {
+      font-size: 1.8rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      padding: 10px;
+      border-radius: 8px;
+      text-align: center;
+      margin-bottom: 10px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .col-prep .column-header { background: var(--warn); color: #000; }
+    .col-ready .column-header { background: var(--success); color: #000; }
+
+    /* Cards */
+    .card {
+      background: var(--card-bg);
+      border-radius: 12px;
+      padding: 15px 20px;
+      border-left: 8px solid var(--accent);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: all 0.3s ease;
+      animation: slideIn 0.4s ease-out;
+    }
+
+    .card.ready {
+      border-left-color: var(--success);
+      background: var(--highlight);
+      animation: flash 1s infinite alternate;
+    }
+
+    .card-info h2 {
+      margin: 0 0 5px 0;
+      font-size: 2.2rem;
+      color: var(--accent);
+    }
+
+    .card.ready h2 { color: var(--success); }
+
+    .card-items {
+      font-size: 1.4rem;
+      color: var(--muted);
+      margin: 0;
+      list-style: none;
+      padding: 0;
+    }
+
+    .card-items li { margin-bottom: 4px; }
+    .qty { font-weight: bold; color: var(--text); }
+
+    .card-meta {
+      text-align: right;
+      min-width: 120px;
+    }
+
+    .timer {
+      font-size: 2rem;
+      font-weight: bold;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 5px 10px;
+      border-radius: 6px;
+      font-size: 1rem;
+      font-weight: bold;
+      margin-top: 5px;
+    }
+
+    .badge.kids { background: #a855f7; color: white; }
+
+    /* Animations */
+    @keyframes slideIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes flash {
+      from { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); transform: scale(1); }
+      to { box-shadow: 0 0 20px 10px rgba(34, 197, 94, 0.8); transform: scale(1.02); }
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--card-bg); border-radius: 4px; }
+
+    /* Config Modal */
+    #config-modal {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.9); display: flex; align-items: center; justify-content: center;
+      z-index: 1000;
+    }
+    .config-box {
+      background: var(--card-bg); padding: 30px; border-radius: 15px; text-align: center;
+    }
+    input {
+      font-size: 1.5rem; padding: 10px; width: 300px; text-align: center;
+      background: var(--bg); color: white; border: 1px solid var(--accent); border-radius: 8px;
+    }
+    button {
+      font-size: 1.5rem; padding: 10px 30px; margin-top: 15px;
+      background: var(--accent); color: white; border: none; border-radius: 8px; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Configuração Inicial -->
+  <div id="config-modal">
+    <div class="config-box">
+      <h2>📺 Configurar TV Display</h2>
+      <p>Digite o IP do PC do Caixa:</p>
+      <input type="text" id="ip-input" placeholder="192.168.0.100">
+      <br>
+      <button onclick="saveConfig()">Conectar</button>
+      <p style="margin-top:10px; font-size:0.9rem; color:#94a3b8">Ou acesse: ?ip=192.168.0.100</p>
+    </div>
+  </div>
+
+  <header>
+    <div>
+      <h1>🍳 KITCHEN FLOW TV</h1>
+      <span id="status-text" class="status offline">🔴 Desconectado</span>
+    </div>
+    <div id="clock" class="clock">00:00</div>
+  </header>
+
+  <div class="board">
+    <!-- Coluna Em Produção -->
+    <div class="column col-prep">
+      <div class="column-header">🔥 Em Produção</div>
+      <div id="prep-list"></div>
+    </div>
+
+    <!-- Coluna Prontos -->
+    <div class="column col-ready">
+      <div class="column-header">✅ Prontos para Retirada</div>
+      <div id="ready-list"></div>
+    </div>
+  </div>
+
+  <script>
+    // Configurações
+    let API_BASE = '';
+    let orders = [];
+    let pollInterval = null;
+
+    // Inicialização
+    window.onload = () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const savedIp = localStorage.getItem('tv_display_ip');
+      
+      if (urlParams.get('ip')) {
+        setApiBase(urlParams.get('ip'));
+      } else if (savedIp) {
+        setApiBase(savedIp);
+      } else {
+        document.getElementById('config-modal').style.display = 'flex';
+      }
+
+      updateClock();
+      setInterval(updateClock, 1000);
+    };
+
+    function setApiBase(ip) {
+      API_BASE = `http://${ip}:4545`;
+      document.getElementById('config-modal').style.display = 'none';
+      localStorage.setItem('tv_display_ip', ip);
+      connect();
+    }
+
+    function saveConfig() {
+      const ip = document.getElementById('ip-input').value.trim();
+      if (ip) setApiBase(ip);
+    }
+
+    function updateClock() {
+      const now = new Date();
+      document.getElementById('clock').textContent = now.toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'});
+    }
+
+    // Conexão e Polling
+    function connect() {
+      document.getElementById('status-text').textContent = ' Conectado';
+      document.getElementById('status-text').className = 'status online';
+      
+      // Polling rápido para TV (5 segundos)
+      if (pollInterval) clearInterval(pollInterval);
+      fetchOrders();
+      pollInterval = setInterval(fetchOrders, 5000);
+    }
+
+    async function fetchOrders() {
+      try {
+        const res = await fetch(`${API_BASE}/api/waiter/orders`);
+        if (!res.ok) throw new Error('Erro');
+        const data = await res.json();
+        
+        const newOrders = data.orders || [];
+        checkAlerts(orders, newOrders);
+        orders = newOrders;
+        render(orders);
+      } catch (e) {
+        document.getElementById('status-text').textContent = '🔴 Erro de Conexão';
+        document.getElementById('status-text').className = 'status offline';
+      }
+    }
+
+    // Lógica de Alerta (Som + Piscar)
+    function checkAlerts(oldOrders, newOrders) {
+      newOrders.forEach(newOrder => {
+        if (newOrder.status === 'concluido') {
+          const oldOrder = oldOrders.find(o => o.id === newOrder.id);
+          // Se não existia ou não estava concluído antes
+          if (!oldOrder || oldOrder.status !== 'concluido') {
+            triggerAlert(newOrder.mesa);
+          }
+        }
+      });
+    }
+
+    function triggerAlert(mesa) {
+      // Som discreto (Web Audio API)
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(880, ctx.currentTime); // Lá
+        osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.3); // Desce para Lá grave
+        gain.gain.setValueAtTime(0.1, ctx.currentTime); // Volume baixo
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+        
+        osc.start();
+        osc.stop(ctx.currentTime + 0.5);
+      } catch(e) {}
+
+      // Scroll para o topo da lista de prontos para garantir visibilidade
+      const readyList = document.getElementById('ready-list');
+      readyList.scrollTop = 0;
+    }
+
+    // Renderização
+    function render(ordersList) {
+      const prepList = document.getElementById('prep-list');
+      const readyList = document.getElementById('ready-list');
+      
+      prepList.innerHTML = '';
+      readyList.innerHTML = '';
+
+      // Filtrar e ordenar
+      const prep = ordersList.filter(o => o.status !== 'concluido' && o.status !== 'cancelled').sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+      const ready = ordersList.filter(o => o.status === 'concluido').sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+      prep.forEach(order => prepList.appendChild(createCard(order, false)));
+      ready.forEach(order => readyList.appendChild(createCard(order, true)));
+    }
+
+    function createCard(order, isReady) {
+      const div = document.createElement('div');
+      div.className = `card ${isReady ? 'ready' : ''}`;
+      
+      const itemsHtml = order.itens.map(i => 
+        `<li><span class="qty">${i.quantidade}x</span> ${i.item}</li>`
+      ).join('');
+
+      const priorityBadge = order.hasPriority ? '<span class="badge kids"> PRIORIDADE</span>' : '';
+
+      div.innerHTML = `
+        <div class="card-info">
+          <h2>${order.mesa} ${priorityBadge}</h2>
+          <ul class="card-items">${itemsHtml}</ul>
+        </div>
+        <div class="card-meta">
+          <div class="timer">${formatTime(order.elapsedMinutes)}</div>
+        </div>
+      `;
+      return div;
+    }
+
+    function formatTime(minutes) {
+      if (!minutes) return '0min';
+      if (minutes < 60) return `${minutes}min`;
+      const h = Math.floor(minutes / 60);
+      const m = minutes % 60;
+      return `${h}h ${m}min`;
+    }
+  </script>
+</body>
+</html>
