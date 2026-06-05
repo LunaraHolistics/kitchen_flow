@@ -1,7 +1,7 @@
 /**
- * Kitchen Flow - Página do Garçom v1.2
+ * Kitchen Flow - Página do Garçom v1.3
  * Funcionalidades: PIN diário, PWA notifications, filtro salvo, polling, pull-to-refresh
- * Correções: API_BASE dinâmica, timeout explícito, fallback de IPs, mensagens claras
+ * Hotfix v1.3: Status robusto + cache busting + contador de falhas
  */
 (() => {
   'use strict';
@@ -60,6 +60,8 @@
   let pullStartY = 0;
   let pinValidated = false;
   let notificationPermission = 'default';
+  let fetchFailCount = 0; // ← NOVO: Contador de falhas consecutivas
+  const MAX_FETCH_FAILS = 3; // ← NOVO: Máximo de falhas antes de marcar offline
 
   // Seletores DOM
   const $ = (sel, context = document) => context.querySelector(sel);
@@ -496,16 +498,22 @@
     }
   }
 
+  // ← CORRIGIDO: fetchOrders com status robusto e cache busting
   async function fetchOrders() {
     if (isRefreshing) return;
     isRefreshing = true;
     updateConnectionStatus('loading');
 
     try {
+      // ← NOVO: Cache busting obrigatório para evitar dados antigos
       const url = new URL(`${API_BASE}/api/waiter/orders`);
+      url.searchParams.set('_', Date.now()); // Evita cache do navegador
       if (currentGarcom) url.searchParams.set('garcom', currentGarcom);
 
-      const response = await fetchWithFallback(url, { cache: 'no-cache' });
+      const response = await fetchWithFallback(url, { 
+        cache: 'no-cache', 
+        headers: {'Accept':'application/json'} 
+      });
       const data = await response.json();
 
       if (data.success) {
@@ -513,7 +521,10 @@
         lastUpdate = new Date();
         renderOrders();
         updateLastUpdate();
+        
+        // 🔥 FORÇA STATUS ONLINE NO SUCESSO
         updateConnectionStatus('online');
+        fetchFailCount = 0; // ← NOVO: Reseta contador de falhas
 
         const newReady = orders.filter(o => o.status === 'concluido' && !o.notified && (!currentGarcom || o.garcom === currentGarcom));
         if (newReady.length > 0) {
@@ -523,16 +534,15 @@
         throw new Error(data.error || 'Erro desconhecido');
       }
     } catch (e) {
-      console.error('❌ Erro ao buscar pedidos:', e.message);
-      updateConnectionStatus('offline');
+      console.error('❌ Erro fetchOrders:', e.message);
+      fetchFailCount++; // ← NOVO: Incrementa contador
       
-      // ← NOVO: Mensagens específicas por tipo de erro
-      if (e.name === 'AbortError' || e.message?.includes('timeout')) {
-        toast('⏱️ Conexão lenta. Verifique se o PC do caixa está perto do roteador.', 'warning', 5000);
-      } else if (e.message?.includes('NetworkError') || e.message?.includes('Failed to fetch')) {
-        toast('🔴 Sem conexão com o Bridge. Verifique: 1) PC ligado 2) Mesma Wi-Fi 3) IP correto', 'error', 8000);
+      // ← NOVO: Só muda para offline se falhar 3x seguidas
+      if (fetchFailCount >= MAX_FETCH_FAILS) {
+        updateConnectionStatus('offline');
+        toast('⚠️ Conexão instável. Verifique o PC do caixa.', 'warning', 5000);
       } else {
-        toast('❌ Não foi possível carregar pedidos. Puxe para atualizar.', 'error', 4000);
+        console.warn(`⚠️ Falha ${fetchFailCount}/${MAX_FETCH_FAILS} na conexão`);
       }
       
       const cached = loadCachedOrders();
@@ -620,9 +630,9 @@
   function updateConnectionStatus(status) {
     const dot = els.connStatus.querySelector('.status-dot');
     const text = els.connStatus.querySelector('.status-text');
-    dot.className = `status-dot ${status}`;
+    if (dot) dot.className = `status-dot ${status}`;
     const labels = { 'online': 'Online', 'offline': 'Offline', 'loading': 'Atualizando...' };
-    text.textContent = labels[status] || 'Desconhecido';
+    if (text) text.textContent = labels[status] || 'Desconhecido';
   }
 
   // ============================================================================
@@ -630,7 +640,10 @@
   // ============================================================================
 
   function setupEventListeners() {
-    els.refreshBtn.addEventListener('click', () => { els.loading.classList.remove('hidden'); fetchOrders(); });
+    els.refreshBtn.addEventListener('click', () => { 
+      els.loading.classList.remove('hidden'); 
+      fetchOrders(); 
+    });
     
     // ← NOVO: Botão de configuração de API
     els.configBtn?.addEventListener('click', () => {
@@ -689,13 +702,25 @@
       pullStartY = 0; pullDistance = 0;
     });
 
-    window.addEventListener('online', () => { updateConnectionStatus('online'); toast('🟢 Conexão restaurada', 'success', 2000); fetchOrders(); });
-    window.addEventListener('offline', () => { updateConnectionStatus('offline'); toast('🔴 Offline - usando cache', 'warning', 3000); });
-    document.addEventListener('visibilitychange', () => { if (!document.hidden && pinValidated) fetchOrders(); });
+    window.addEventListener('online', () => { 
+      updateConnectionStatus('online'); 
+      fetchFailCount = 0; // ← NOVO: Reseta contador ao reconectar
+      toast('🟢 Conexão restaurada', 'success', 2000); 
+      fetchOrders(); 
+    });
+    window.addEventListener('offline', () => { 
+      updateConnectionStatus('offline'); 
+      toast('🔴 Offline - usando cache', 'warning', 3000); 
+    });
+    document.addEventListener('visibilitychange', () => { 
+      if (!document.hidden && pinValidated) fetchOrders(); 
+    });
 
     document.addEventListener('touchstart', () => {
       if (notificationPermission === 'default') {
-        requestNotificationPermission().then(granted => { if (granted) toast('🔔 Notificações ativadas!', 'success', 4000); });
+        requestNotificationPermission().then(granted => { 
+          if (granted) toast('🔔 Notificações ativadas!', 'success', 4000); 
+        });
       }
     }, { once: true, passive: true });
   }
@@ -705,7 +730,7 @@
   // ============================================================================
 
   async function init() {
-    console.log('🚀 Iniciando Kitchen Flow Garçom v1.2...');
+    console.log('🚀 Iniciando Kitchen Flow Garçom v1.3...');
     setupEventListeners();
     updateConnectionStatus(navigator.onLine ? 'online' : 'offline');
 
@@ -733,7 +758,7 @@
         .catch(err => console.warn('⚠️ [PWA] SW registration failed:', err));
     }
 
-    console.log('✅ Kitchen Flow Garçom v1.2 inicializado');
+    console.log('✅ Kitchen Flow Garçom v1.3 inicializado');
     console.log('🔗 API Base:', API_BASE);
     console.log('🔐 PIN:', pinValidated ? 'válido' : 'inválido');
   }

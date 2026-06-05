@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Kitchen Flow TV - Painel de Pedidos</title>
+  <title>Kitchen Flow TV v1.1 - Painel de Pedidos</title>
   <style>
     :root {
       --bg: #0f172a;
@@ -43,7 +43,13 @@
     .status { font-size: 1.2rem; font-weight: bold; }
     .status.online { color: var(--success); }
     .status.offline { color: var(--danger); }
+    .status.loading { color: var(--warn); }
     .clock { font-size: 2.5rem; font-weight: bold; font-variant-numeric: tabular-nums; }
+    .last-update { 
+      font-size: 0.9rem; 
+      color: var(--muted); 
+      margin-top: 4px;
+    }
 
     /* Board Layout */
     .board {
@@ -138,6 +144,15 @@
 
     .badge.kids { background: #a855f7; color: white; }
 
+    /* Empty State */
+    .empty-state {
+      text-align: center;
+      color: var(--muted);
+      padding: 40px 20px;
+      font-size: 1.2rem;
+      font-style: italic;
+    }
+
     /* Animations */
     @keyframes slideIn {
       from { opacity: 0; transform: translateY(20px); }
@@ -157,19 +172,39 @@
     /* Config Modal */
     #config-modal {
       position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-      background: rgba(0,0,0,0.9); display: flex; align-items: center; justify-content: center;
+      background: rgba(0,0,0,0.9); display: none; align-items: center; justify-content: center;
       z-index: 1000;
     }
+    #config-modal.visible { display: flex; }
     .config-box {
       background: var(--card-bg); padding: 30px; border-radius: 15px; text-align: center;
+      max-width: 500px; width: 90%;
     }
+    .config-box h2 { margin-top: 0; color: var(--accent); }
     input {
       font-size: 1.5rem; padding: 10px; width: 300px; text-align: center;
       background: var(--bg); color: white; border: 1px solid var(--accent); border-radius: 8px;
+      font-family: 'Courier New', monospace;
     }
+    input:focus { outline: none; border-color: var(--success); }
     button {
       font-size: 1.5rem; padding: 10px 30px; margin-top: 15px;
       background: var(--accent); color: white; border: none; border-radius: 8px; cursor: pointer;
+      font-weight: bold;
+    }
+    button:hover { background: var(--success); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .config-error {
+      color: var(--danger);
+      margin-top: 10px;
+      font-size: 0.9rem;
+      min-height: 20px;
+    }
+    .config-help {
+      margin-top: 15px; 
+      font-size: 0.85rem; 
+      color: var(--muted);
+      line-height: 1.5;
     }
   </style>
 </head>
@@ -180,10 +215,14 @@
     <div class="config-box">
       <h2>📺 Configurar TV Display</h2>
       <p>Digite o IP do PC do Caixa:</p>
-      <input type="text" id="ip-input" placeholder="192.168.0.100">
+      <input type="text" id="ip-input" placeholder="192.168.0.100" autocomplete="off">
       <br>
-      <button onclick="saveConfig()">Conectar</button>
-      <p style="margin-top:10px; font-size:0.9rem; color:#94a3b8">Ou acesse: ?ip=192.168.0.100</p>
+      <button id="connect-btn" onclick="saveConfig()">Conectar</button>
+      <div id="config-error" class="config-error"></div>
+      <div class="config-help">
+        💡 <strong>Dica:</strong> Para pular esta tela, acesse diretamente:<br>
+        <code style="background:#0f172a; padding:2px 6px; border-radius:4px;">?ip=192.168.0.190</code>
+      </div>
     </div>
   </div>
 
@@ -191,6 +230,7 @@
     <div>
       <h1>🍳 KITCHEN FLOW TV</h1>
       <span id="status-text" class="status offline">🔴 Desconectado</span>
+      <div id="last-update" class="last-update">Aguardando conexão...</div>
     </div>
     <div id="clock" class="clock">00:00</div>
   </header>
@@ -199,89 +239,201 @@
     <!-- Coluna Em Produção -->
     <div class="column col-prep">
       <div class="column-header">🔥 Em Produção</div>
-      <div id="prep-list"></div>
+      <div id="prep-list">
+        <div class="empty-state">Nenhum pedido em produção</div>
+      </div>
     </div>
 
     <!-- Coluna Prontos -->
     <div class="column col-ready">
       <div class="column-header">✅ Prontos para Retirada</div>
-      <div id="ready-list"></div>
+      <div id="ready-list">
+        <div class="empty-state">Nenhum pedido pronto</div>
+      </div>
     </div>
   </div>
 
   <script>
-    // Configurações
+    // ============================================================================
+    // ESTADO GLOBAL
+    // ============================================================================
     let API_BASE = '';
     let orders = [];
     let pollInterval = null;
+    let fetchFailCount = 0;
+    const MAX_FETCH_FAILS = 3;
+    let audioContext = null; // ← NOVO: Contexto compartilhado
 
-    // Inicialização
+    // ============================================================================
+    // INICIALIZAÇÃO ROBUSTA
+    // ============================================================================
     window.onload = () => {
       const urlParams = new URLSearchParams(window.location.search);
+      const urlIp = urlParams.get('ip');
       const savedIp = localStorage.getItem('tv_display_ip');
       
-      if (urlParams.get('ip')) {
-        setApiBase(urlParams.get('ip'));
+      // Prioridade: URL > localStorage > Modal
+      if (urlIp) {
+        console.log('🔌 IP via URL:', urlIp);
+        setApiBase(urlIp);
       } else if (savedIp) {
+        console.log('🔌 IP do localStorage:', savedIp);
         setApiBase(savedIp);
       } else {
-        document.getElementById('config-modal').style.display = 'flex';
+        console.log('🔌 Mostrando modal de configuração');
+        document.getElementById('config-modal').classList.add('visible');
+        document.getElementById('ip-input').focus();
       }
 
       updateClock();
       setInterval(updateClock, 1000);
+      
+      // ← NOVO: Enter para submeter no modal
+      document.getElementById('ip-input')?.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') saveConfig();
+      });
     };
+
+    // ============================================================================
+    // CONFIGURAÇÃO DE IP (CORRIGIDA)
+    // ============================================================================
+    function saveConfig() {
+      const input = document.getElementById('ip-input');
+      const errorEl = document.getElementById('config-error');
+      const btn = document.getElementById('connect-btn');
+      const ip = input.value.trim();
+      
+      // Validação
+      if (!ip) {
+        errorEl.textContent = '❌ Digite um IP válido';
+        input.focus();
+        return;
+      }
+      
+      // Regex básico para IPv4
+      const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
+      if (!ipRegex.test(ip)) {
+        errorEl.textContent = '❌ Formato inválido. Use: 192.168.0.100';
+        input.focus();
+        return;
+      }
+      
+      // Feedback visual
+      btn.disabled = true;
+      btn.textContent = 'Conectando...';
+      errorEl.textContent = '';
+      
+      // ← NOVO: Salvar ANTES de tentar conectar (persistência garantida)
+      localStorage.setItem('tv_display_ip', ip);
+      console.log('✅ IP salvo no localStorage:', ip);
+      
+      // Atualizar URL para facilitar favoritos
+      const newUrl = `${window.location.pathname}?ip=${ip}`;
+      window.history.replaceState({}, '', newUrl);
+      
+      // Iniciar conexão
+      setApiBase(ip);
+    }
 
     function setApiBase(ip) {
       API_BASE = `http://${ip}:4545`;
-      document.getElementById('config-modal').style.display = 'none';
+      document.getElementById('config-modal').classList.remove('visible');
+      
+      // ← NOVO: Salvar no localStorage (garantia dupla)
       localStorage.setItem('tv_display_ip', ip);
+      
       connect();
     }
 
-    function saveConfig() {
-      const ip = document.getElementById('ip-input').value.trim();
-      if (ip) setApiBase(ip);
-    }
-
+    // ============================================================================
+    // CLOCK E UI
+    // ============================================================================
     function updateClock() {
       const now = new Date();
-      document.getElementById('clock').textContent = now.toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'});
+      document.getElementById('clock').textContent = 
+        now.toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'});
     }
 
-    // Conexão e Polling
+    function updateLastUpdate() {
+      const now = new Date();
+      document.getElementById('last-update').textContent = 
+        `🔄 Última atualização: ${now.toLocaleTimeString('pt-BR')}`;
+    }
+
+    // ============================================================================
+    // CONEXÃO E POLLING (CORRIGIDO)
+    // ============================================================================
     function connect() {
-      document.getElementById('status-text').textContent = ' Conectado';
-      document.getElementById('status-text').className = 'status online';
+      const statusText = document.getElementById('status-text');
+      statusText.textContent = '🟡 Conectando...';
+      statusText.className = 'status loading';
       
-      // Polling rápido para TV (5 segundos)
+      // Limpar polling anterior
       if (pollInterval) clearInterval(pollInterval);
+      
+      // Busca inicial
       fetchOrders();
+      
+      // Polling a cada 5 segundos
       pollInterval = setInterval(fetchOrders, 5000);
     }
 
     async function fetchOrders() {
       try {
-        const res = await fetch(`${API_BASE}/api/waiter/orders`);
-        if (!res.ok) throw new Error('Erro');
-        const data = await res.json();
+        // ← NOVO: Cache busting para evitar dados antigos
+        const url = `${API_BASE}/api/waiter/orders?_=${Date.now()}`;
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
         
+        const res = await fetch(url, { 
+          signal: controller.signal,
+          cache: 'no-cache'
+        });
+        
+        clearTimeout(timeoutId);
+        
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        
+        const data = await res.json();
         const newOrders = data.orders || [];
+        
+        // Detectar novos pedidos prontos para alerta
         checkAlerts(orders, newOrders);
         orders = newOrders;
         render(orders);
+        
+        // ← NOVO: Sucesso - reseta contador e marca online
+        if (fetchFailCount > 0) {
+          console.log('✅ Conexão restaurada');
+        }
+        fetchFailCount = 0;
+        
+        const statusText = document.getElementById('status-text');
+        statusText.textContent = '🟢 Conectado';
+        statusText.className = 'status online';
+        updateLastUpdate();
+        
       } catch (e) {
-        document.getElementById('status-text').textContent = '🔴 Erro de Conexão';
-        document.getElementById('status-text').className = 'status offline';
+        fetchFailCount++;
+        console.warn(`⚠️ Falha ${fetchFailCount}/${MAX_FETCH_FAILS}:`, e.message);
+        
+        // ← NOVO: Só marca offline após 3 falhas consecutivas
+        if (fetchFailCount >= MAX_FETCH_FAILS) {
+          const statusText = document.getElementById('status-text');
+          statusText.textContent = '🔴 Sem conexão';
+          statusText.className = 'status offline';
+        }
       }
     }
 
-    // Lógica de Alerta (Som + Piscar)
+    // ============================================================================
+    // SISTEMA DE ALERTAS (CORRIGIDO E ROBUSTO)
+    // ============================================================================
     function checkAlerts(oldOrders, newOrders) {
       newOrders.forEach(newOrder => {
         if (newOrder.status === 'concluido') {
           const oldOrder = oldOrders.find(o => o.id === newOrder.id);
-          // Se não existia ou não estava concluído antes
+          // Só alerta se é um pedido NOVO na lista de prontos
           if (!oldOrder || oldOrder.status !== 'concluido') {
             triggerAlert(newOrder.mesa);
           }
@@ -290,30 +442,60 @@
     }
 
     function triggerAlert(mesa) {
-      // Som discreto (Web Audio API)
+      console.log(`🔔 Alerta: Mesa ${mesa} pronta!`);
+      
+      // ← NOVO: Som discreto com contexto compartilhado (mais estável)
       try {
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
+        if (!audioContext) {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (AudioCtx) audioContext = new AudioCtx();
+        }
         
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(880, ctx.currentTime); // Lá
-        osc.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.3); // Desce para Lá grave
-        gain.gain.setValueAtTime(0.1, ctx.currentTime); // Volume baixo
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
-        
-        osc.start();
-        osc.stop(ctx.currentTime + 0.5);
-      } catch(e) {}
+        if (audioContext) {
+          // Resume se estiver suspenso (política de autoplay)
+          if (audioContext.state === 'suspended') {
+            audioContext.resume();
+          }
+          
+          const osc = audioContext.createOscillator();
+          const gain = audioContext.createGain();
+          osc.connect(gain);
+          gain.connect(audioContext.destination);
+          
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(880, audioContext.currentTime); // Lá
+          osc.frequency.exponentialRampToValueAtTime(440, audioContext.currentTime + 0.3);
+          gain.gain.setValueAtTime(0.15, audioContext.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.5);
+          
+          osc.start();
+          osc.stop(audioContext.currentTime + 0.5);
+        }
+      } catch(e) {
+        console.warn('⚠️ Som não reproduzido:', e.message);
+      }
 
-      // Scroll para o topo da lista de prontos para garantir visibilidade
+      // Scroll para o topo da lista de prontos
       const readyList = document.getElementById('ready-list');
-      readyList.scrollTop = 0;
+      if (readyList) readyList.scrollTop = 0;
     }
 
-    // Renderização
+    // ← NOVO: Inicializar AudioContext no primeiro clique (política autoplay)
+    document.addEventListener('click', () => {
+      if (!audioContext) {
+        try {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (AudioCtx) {
+            audioContext = new AudioCtx();
+            audioContext.resume();
+          }
+        } catch(e) {}
+      }
+    }, { once: true });
+
+    // ============================================================================
+    // RENDERIZAÇÃO
+    // ============================================================================
     function render(ordersList) {
       const prepList = document.getElementById('prep-list');
       const readyList = document.getElementById('ready-list');
@@ -321,27 +503,48 @@
       prepList.innerHTML = '';
       readyList.innerHTML = '';
 
-      // Filtrar e ordenar
-      const prep = ordersList.filter(o => o.status !== 'concluido' && o.status !== 'cancelled').sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
-      const ready = ordersList.filter(o => o.status === 'concluido').sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+      // Filtrar e ordenar (mais recentes primeiro)
+      const prep = ordersList
+        .filter(o => o.status !== 'concluido' && o.status !== 'cancelled')
+        .sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+      
+      const ready = ordersList
+        .filter(o => o.status === 'concluido')
+        .sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
 
-      prep.forEach(order => prepList.appendChild(createCard(order, false)));
-      ready.forEach(order => readyList.appendChild(createCard(order, true)));
+      // Renderizar ou mostrar empty state
+      if (prep.length === 0) {
+        prepList.innerHTML = '<div class="empty-state">Nenhum pedido em produção</div>';
+      } else {
+        prep.forEach(order => prepList.appendChild(createCard(order, false)));
+      }
+      
+      if (ready.length === 0) {
+        readyList.innerHTML = '<div class="empty-state">Nenhum pedido pronto</div>';
+      } else {
+        ready.forEach(order => readyList.appendChild(createCard(order, true)));
+      }
     }
 
     function createCard(order, isReady) {
       const div = document.createElement('div');
       div.className = `card ${isReady ? 'ready' : ''}`;
       
-      const itemsHtml = order.itens.map(i => 
-        `<li><span class="qty">${i.quantidade}x</span> ${i.item}</li>`
-      ).join('');
+      // ← NOVO: Proteção contra itens undefined
+      const itens = order.itens || [];
+      const itemsHtml = itens.length > 0 
+        ? itens.map(i => 
+            `<li><span class="qty">${i.quantidade || 1}x</span> ${i.item || 'Item'}</li>`
+          ).join('')
+        : '<li><em>Sem itens</em></li>';
 
-      const priorityBadge = order.hasPriority ? '<span class="badge kids"> PRIORIDADE</span>' : '';
+      const priorityBadge = order.hasPriority 
+        ? '<span class="badge kids">👶 PRIORIDADE</span>' 
+        : '';
 
       div.innerHTML = `
         <div class="card-info">
-          <h2>${order.mesa} ${priorityBadge}</h2>
+          <h2>${order.mesa || 'Mesa ?'} ${priorityBadge}</h2>
           <ul class="card-items">${itemsHtml}</ul>
         </div>
         <div class="card-meta">
@@ -352,12 +555,23 @@
     }
 
     function formatTime(minutes) {
-      if (!minutes) return '0min';
+      if (!minutes && minutes !== 0) return '0min';
+      if (minutes < 1) return '< 1min';
       if (minutes < 60) return `${minutes}min`;
       const h = Math.floor(minutes / 60);
       const m = minutes % 60;
       return `${h}h ${m}min`;
     }
+
+    // ============================================================================
+    // CLEANUP AO FECHAR
+    // ============================================================================
+    window.addEventListener('beforeunload', () => {
+      if (pollInterval) clearInterval(pollInterval);
+      if (audioContext) {
+        try { audioContext.close(); } catch(e) {}
+      }
+    });
   </script>
 </body>
 </html>

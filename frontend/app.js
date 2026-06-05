@@ -1,8 +1,9 @@
 /**
- * Kitchen Flow Monitor - Frontend Tablet v2.1.6
+ * Kitchen Flow Monitor - Frontend Tablet v2.1.8
  * Deploy: https://cozinha-master.netlify.app
  * Backend: Configurável (local ou cloud)
  * Features: Prioridade Kids/Porção, observações em destaque, cache offline, controle por item, PWA reforçado
+ * Hotfix: Fallback HTTP automático quando WebSocket falha
  */
 (() => {
   'use strict';
@@ -57,7 +58,7 @@
   const TIMER_WARN_THRESHOLD = 300;   // 5 min → amarelo
   const TIMER_CRITICAL_THRESHOLD = 600; // 10 min → vermelho/piscando
 
-  console.log('🔌 Kitchen Flow v2.1.7');
+  console.log('🔌 Kitchen Flow v2.1.8');
   console.log('🔌 Frontend URL:', window.location.href);
   console.log('🔌 Backend:', BACKEND_URL);
   console.log('🔌 WebSocket:', WS_URL);
@@ -86,6 +87,8 @@
   let isInitialized = false;
   let serverTimeOffset = 0;
   let lastTimeSync = 0;
+  let useHttpPolling = false; // ← NOVO: Flag para controlar modo HTTP
+  let httpPollingInterval = null; // ← NOVO: Intervalo do polling HTTP
   
   // ← NOVO: Estado para cancelamento
   let cancelAlert = null; // { orderId, itemId, table, reason, timestamp } | null
@@ -436,54 +439,55 @@
   }
 
   // ============================================================================
-  // WEBSOCKET: Conexão Inteligente com Fallback
+  // ← NOVO: CONEXÃO INTELIGENTE COM FALLBACK HTTP AUTOMÁTICO
   // ============================================================================
 
   function connect() {
-    console.log(`🔌 Tentando conectar WebSocket: ${WS_URL}`);
+    console.log('🔌 Iniciando conexão (WebSocket com fallback HTTP)...');
     els.loadingStatus?.textContent = 'Conectando...';
     
-    // Lista de URLs para tentar (fallback)
-    const wsUrls = [
-      WS_URL,
-      WS_URL.replace('192.168.0.100', '192.168.1.100'),
-      WS_URL.replace('192.168.1.100', '10.0.0.100'),
-      'ws://localhost:4545'
-    ];
-    
-    let currentTry = 0;
-    
-    function tryConnect(url) {
-      try {
-        console.log(`🔌 Tentativa ${currentTry + 1}/${wsUrls.length}: ${url}`);
-        ws = new WebSocket(url);
-      } catch (e) {
-        console.error(`❌ Erro ao inicializar WebSocket (${url}):`, e.message);
-        tryNext();
-        return;
+    let wsConnected = false;
+    const wsTimeout = setTimeout(() => {
+      if (!wsConnected) {
+        console.warn('⚠️ WebSocket timeout (3s). Alternando para HTTP Polling...');
+        startHttpPolling();
       }
+    }, 3000);
+
+    try {
+      ws = new WebSocket(WS_URL);
       
       ws.onopen = () => {
-        console.log(`✅ WebSocket conectado em ${url}`);
-        updateConnectionStatus(true); 
+        wsConnected = true;
+        clearTimeout(wsTimeout);
+        console.log('✅ WebSocket conectado');
+        updateConnectionStatus(true);
         reconnectAttempts = 0;
+        useHttpPolling = false;
         els.loadingStatus?.textContent = 'Sincronizando...';
-        toast('🟢 Conectado ao servidor', 'success', 2000);
+        toast('🟢 Conectado via WebSocket', 'success', 2000);
         syncTimeWithServer();
       };
       
       ws.onclose = (event) => {
-        console.log(`🔌 WebSocket desconectado (${url}): code ${event.code}`);
-        updateConnectionStatus(false);
-        if (isInitialized) { 
-          toast('Conexão perdida. Reconectando...', 'warning'); 
-          tryNext(); 
+        clearTimeout(wsTimeout);
+        console.log(`🔌 WebSocket desconectado: code ${event.code}`);
+        
+        if (!wsConnected) {
+          console.warn('🔄 WebSocket falhou. Ativando HTTP Polling...');
+          startHttpPolling();
+        } else {
+          updateConnectionStatus(false);
+          if (isInitialized) {
+            toast('Conexão perdida. Reconectando...', 'warning');
+            setTimeout(connect, 2000);
+          }
         }
       };
       
       ws.onerror = (error) => {
-        console.error(`❌ WebSocket error (${url}):`, error);
-        // Não atualiza status aqui para não flicker, espera onclose
+        console.error('❌ WebSocket error:', error);
+        clearTimeout(wsTimeout);
       };
       
       ws.onmessage = (event) => {
@@ -493,22 +497,66 @@
           handleServerMessage(type, payload);
         } catch (err) { console.error('❌ Erro ao parsear mensagem:', err); }
       };
+    } catch (e) {
+      clearTimeout(wsTimeout);
+      console.warn('⚠️ WebSocket não suportado. Ativando HTTP Polling...');
+      startHttpPolling();
     }
+  }
+
+  // ← NOVO: HTTP Polling como fallback/primário
+  function startHttpPolling() {
+    console.log('📡 HTTP Polling ativado (intervalo: 3s)');
+    useHttpPolling = true;
+    updateConnectionStatus(true);
+    isInitialized = true;
+    hideLoading();
+    renderAll();
+    startTimers();
     
-    function tryNext() {
-      currentTry++;
-      if (currentTry < wsUrls.length) {
-        // Tenta próxima URL após pequeno delay
-        setTimeout(() => tryConnect(wsUrls[currentTry]), 500);
-      } else {
-        // Todas as tentativas falharam
-        updateConnectionStatus(false);
-        scheduleReconnect();
+    toast('🟢 Conectado via HTTP', 'success', 2000);
+    
+    // Busca inicial imediata
+    fetchOrdersHttp();
+    
+    // Polling a cada 3 segundos
+    if (httpPollingInterval) clearInterval(httpPollingInterval);
+    httpPollingInterval = setInterval(fetchOrdersHttp, 3000);
+  }
+
+  // ← NOVO: Buscar pedidos via HTTP
+  async function fetchOrdersHttp() {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/orders`, { 
+        cache: 'no-cache',
+        signal: AbortSignal.timeout(5000)
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        if (data.orders) {
+          // Detectar novos pedidos para notificação
+          const oldIds = new Set(orders.map(o => o.id));
+          const newOrders = data.orders.filter(o => !oldIds.has(o.id));
+          
+          orders = data.orders;
+          cacheOrders(orders);
+          renderAll();
+          updateConnectionStatus(true);
+          
+          // Notificar novos pedidos
+          if (newOrders.length > 0) {
+            newOrders.forEach(order => {
+              toast(`🔔 Novo pedido: ${order.mesa}`, 'info', 3000);
+              playDing();
+            });
+          }
+        }
       }
+    } catch (e) {
+      console.warn('⚠️ Falha no HTTP Polling:', e.message);
+      updateConnectionStatus(false);
     }
-    
-    // Iniciar primeira tentativa
-    tryConnect(wsUrls[0]);
   }
 
   function updateConnectionStatus(online) {
@@ -537,12 +585,26 @@
     setTimeout(() => connect(), delay);
   }
 
+  // ← ATUALIZADO: send() funciona tanto via WebSocket quanto HTTP
   function send(type, payload = {}) {
-    if (ws?.readyState === WebSocket.OPEN) {
+    // Tentar WebSocket primeiro
+    if (ws?.readyState === WebSocket.OPEN && !useHttpPolling) {
       ws.send(JSON.stringify({ type, payload })); 
       return true;
     }
-    // Só mostra toast se não for reconexão automática
+    
+    // Fallback: enviar via HTTP POST
+    if (useHttpPolling) {
+      fetch(`${BACKEND_URL}/api/command`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type, payload }),
+        signal: AbortSignal.timeout(3000)
+      }).catch(e => console.warn('⚠️ Falha ao enviar comando HTTP:', e.message));
+      return true;
+    }
+    
+    // Sem conexão
     if (reconnectAttempts === 0) {
       toast('Sem conexão com o servidor. Verifique o Bridge.', 'error');
     }
@@ -558,7 +620,7 @@
       case 'INIT':
         orders = data.orders || []; 
         clientId = data.clientId;
-        cacheOrders(orders); // ← NOVO: Salvar no cache offline
+        cacheOrders(orders);
         if (clientId && els.clientId) { 
           els.clientId.textContent = `📱 ${clientId.slice(0, 8)}`; 
           els.clientId.title = `ID: ${clientId}`; 
@@ -575,7 +637,7 @@
       case 'NEW_ORDER':
         if (!orders.find(o => o.id === data.order?.id)) {
           orders.unshift(data.order); 
-          cacheOrders(orders); // ← NOVO: Atualizar cache
+          cacheOrders(orders);
           renderAll();
           toast(`🔔 Novo pedido: ${data.order.mesa}`, 'info', 3000); 
           playDing();
@@ -586,7 +648,7 @@
         if (idx > -1) {
           console.log('📥 Pedido atualizado:', data.order.id, data.order.status);
           orders[idx] = data.order; 
-          cacheOrders(orders); // ← NOVO: Atualizar cache
+          cacheOrders(orders);
           renderAll();
           if (data.order.status === 'em-preparo') startTimers();
         } 
@@ -609,7 +671,7 @@
             order.cancelledAt = new Date().toISOString();
             order.cancelReason = reason;
           }
-          cacheOrders(orders); // ← NOVO: Atualizar cache
+          cacheOrders(orders);
           renderAll();
           setTimeout(() => scrollToOrder(orderId), 500);
         }
@@ -618,7 +680,7 @@
         const before = orders.length;
         orders = orders.filter(o => o.id !== data.orderId);
         if (orders.length < before) { 
-          cacheOrders(orders); // ← NOVO: Atualizar cache
+          cacheOrders(orders);
           renderAll(); 
           toast('🗑️ Pedido removido', 'info', 2000); 
         } 
@@ -671,15 +733,13 @@
   // ============================================================================
 
   function renderGeral() {
-    // ← NOVO: Filtrar delivery + bebidas + usar cache se offline
     let ativos = orders.filter(o => 
       o.status !== 'concluido' && 
       o.status !== 'cancelled' &&
-      o.tipo !== 'delivery' &&  // ← Filtrar delivery
+      o.tipo !== 'delivery' &&
       !o.itens?.every(i => i.setor === 'Bebidas')
     );
 
-    // ← NOVO: Se não há pedidos e estamos offline, tentar carregar do cache
     if (ativos.length === 0 && !navigator.onLine) {
       const cached = loadCachedOrders();
       if (cached) {
@@ -712,7 +772,7 @@
       const isDelivery = order.tipo === 'delivery';
       const isInPrep = order.status === 'em-preparo';
       const isCancelled = order.status === 'cancelled';
-      const hasPriority = isPriorityOrder(order); // ← NOVO: Verificar prioridade
+      const hasPriority = isPriorityOrder(order);
       const startedAt = order.startedAt ? new Date(order.startedAt) : null;
       const elapsed = startedAt ? Math.floor((Date.now() - startedAt.getTime()) / 1000) : 0;
       const timeClass = getTimeClass(elapsed);
@@ -795,7 +855,7 @@
   function renderSetor() {
     const ativos = orders.filter(o => 
       o.status !== 'concluido' && o.status !== 'cancelled' &&
-      o.tipo !== 'delivery' &&  // ← Filtrar delivery
+      o.tipo !== 'delivery' &&
       o.itens?.some(i => i.setor !== 'Bebidas' && i.status !== 'cancelled')
     );
 
@@ -811,7 +871,6 @@
         }
         const item = bySector[it.setor][it.item];
         item.total += it.quantidade;
-        // ← NOVO: Marcar se tem prioridade
         if (isPriorityOrder(order)) item.hasPriority = true;
         item.tables.push({
           mesa: order.mesa, tipo: order.tipo, qty: it.quantidade,
@@ -819,7 +878,7 @@
           startedAt: it.startedAt || order.startedAt,
           itemId: it.id, itemIndex: order.itens?.indexOf(it),
           garcom: order.garcom,
-          observacoes: order.observacoes // ← NOVO: Incluir observações
+          observacoes: order.observacoes
         });
         if ((it.startedAt || order.startedAt) && (!item.firstStartedAt || new Date(it.startedAt || order.startedAt) < new Date(item.firstStartedAt))) {
           item.firstStartedAt = it.startedAt || order.startedAt;
@@ -1223,7 +1282,7 @@
   // ============================================================================
 
   function init() {
-    console.log('🚀 Inicializando Kitchen Flow v2.1.6...');
+    console.log('🚀 Inicializando Kitchen Flow v2.1.8...');
     startClock(); setupTabs(); setupConfigPanel(); setupSound(); setupTouchOptimizations();
     
     // ← NOVO: Tentar carregar do cache se estiver offline na inicialização
@@ -1268,6 +1327,10 @@
     toast('🔴 Offline - usando pedidos em cache', 'warning', 5000);
   });
 
-  window.addEventListener('beforeunload', () => { stopTimers(); if (ws?.readyState === WebSocket.OPEN) ws.close(); });
+  window.addEventListener('beforeunload', () => { 
+    stopTimers(); 
+    if (httpPollingInterval) clearInterval(httpPollingInterval);
+    if (ws?.readyState === WebSocket.OPEN) ws.close(); 
+  });
 
 })();
