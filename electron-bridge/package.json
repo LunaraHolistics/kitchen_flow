@@ -1,26 +1,26 @@
 {
   "name": "kitchen-flow-bridge",
-  "version": "2.1.6",
+  "version": "2.1.8",
   "description": "Bridge para monitorar downloads do Saipos e processar pedidos em tempo real",
   "author": "CLB Studio - by Celso Luiz",
   "main": "main.js",
-  "homepage": "./",
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
-    "build": "electron-builder --win",
-    "build:dir": "electron-builder --dir --win",
-    "postinstall": "electron-builder install-app-deps"
+    "build": "npx electron-builder --win",
+    "build:dir": "npx electron-builder --dir --win",
+    "postinstall": "echo Skipping postinstall"
   },
   "dependencies": {
     "chokidar": "^3.5.3",
-    "moment": "^2.29.4",
     "dotenv": "^16.3.1",
+    "moment": "^2.29.4",
     "uuid": "^9.0.1"
   },
   "devDependencies": {
-    "electron": "^27.0.0",
-    "electron-builder": "^24.9.1"
+    "7zip-bin": "^5.2.0",
+    "electron": "27.0.0",
+    "electron-builder": "24.9.1"
   },
   "build": {
     "appId": "com.kitchenflow.bridge",
@@ -48,7 +48,8 @@
       "installerHeaderIcon": "icon.ico",
       "installerLanguages": ["pt_BR"],
       "language": "1046",
-      "deleteAppDataOnUninstall": false
+      "deleteAppDataOnUninstall": false,
+      "useZip": true
     },
     "directories": {
       "output": "dist",
@@ -57,11 +58,10 @@
     "files": [
       "**/*",
       "!dist/**/*",
-      "!node_modules/*/{test,__tests__,example,*.md}",
+      "!node_modules/**/{test,__tests__,example,*.md}",
       "!**/*.{md,txt,log}",
       "!.git/**/*",
-      "!.vscode/**/*",
-      "!browser-extension/node_modules/**/*"
+      "!.vscode/**/*"
     ],
     "extraResources": [
       {
@@ -71,20 +71,6 @@
       {
         "from": ".env",
         "to": ".env"
-      },
-      {
-        "from": "browser-extension",
-        "to": "browser-extension",
-        "filter": [
-          "**/*",
-          "!node_modules/**/*",
-          "!**/*.md",
-          "!**/icon*.png"
-        ]
-      },
-      {
-        "from": "EXTENSAO_INSTRUCOES.txt",
-        "to": "EXTENSAO_INSTRUCOES.txt"
       },
       {
         "from": "../frontend",
