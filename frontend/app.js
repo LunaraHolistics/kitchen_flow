@@ -3,7 +3,7 @@
  * Deploy: https://cozinha-master.netlify.app
  * Backend: Configurável (local ou cloud)
  * Features: Prioridade Kids/Porção, observações em destaque, cache offline, controle por item, PWA reforçado
- * Hotfix: Fallback HTTP automático quando WebSocket falha
+ * Hotfix: WebSocket + HTTP Polling automático + Fallbacks robustos
  */
 (() => {
   'use strict';
@@ -29,19 +29,18 @@
     }
 
     // 3. Prioridade: Detectar ambiente
-    const isNetlify = window.location.hostname.includes('netlify.app') || 
-                      window.location.hostname.includes('netlify.com');
+    const hostname = window.location.hostname;
     
-    if (isNetlify) {
-      // Ambiente Netlify: tentar IPs comuns de rede local
+    // Se estiver em domínio público (Netlify/Vercel), tentar IPs locais comuns
+    if (hostname.includes('netlify') || hostname.includes('vercel') || !hostname.includes('localhost')) {
+      console.log('🌐 Ambiente cloud detectado. Usando fallback de IPs locais.');
       const localIps = [
         'http://192.168.0.100:4545',
         'http://192.168.1.100:4545',
         'http://10.0.0.100:4545',
-        'http://localhost:4545' // Fallback último
+        'http://localhost:4545'
       ];
-      console.log('🌐 Ambiente Netlify detectado. Tentando IPs locais:', localIps);
-      return localIps[0]; // Retorna o primeiro, o fallback é tratado na conexão
+      return localIps[0];
     }
 
     // 4. Default: localhost (desenvolvimento)
@@ -87,11 +86,12 @@
   let isInitialized = false;
   let serverTimeOffset = 0;
   let lastTimeSync = 0;
-  let useHttpPolling = false; // ← NOVO: Flag para controlar modo HTTP
-  let httpPollingInterval = null; // ← NOVO: Intervalo do polling HTTP
+  let useHttpPolling = false;
+  let httpPollingInterval = null;
+  let connectionRetryTimeout = null;
   
   // ← NOVO: Estado para cancelamento
-  let cancelAlert = null; // { orderId, itemId, table, reason, timestamp } | null
+  let cancelAlert = null;
 
   // ============================================================================
   // SELETORES DOM
@@ -128,7 +128,6 @@
     saveConfig: $('#saveConfig'),
     clearCompleted: $('#clearCompleted'),
     toasts: $('#toasts'),
-    // ← NOVO: Elementos do banner de cancelamento
     cancelBanner: $('#cancelBanner'),
     cancelMessage: $('#cancelMessage'),
     cancelClose: $('#cancelClose')
@@ -160,20 +159,15 @@
     return '';
   }
 
-  // ← NOVO: Cor do badge por tempo de preparo
   function getWaitTimeClass(seconds) {
     if (seconds == null) return '';
-    if (seconds < 300) return 'wait-fast';    // <5min → verde
-    if (seconds < 600) return 'wait-medium';  // 5-10min → amarelo
-    return 'wait-slow';                        // >10min → vermelho
+    if (seconds < 300) return 'wait-fast';
+    if (seconds < 600) return 'wait-medium';
+    return 'wait-slow';
   }
 
-  // ← NOVO: Verificar se pedido tem prioridade (Kids/Porções)
   function isPriorityOrder(order) {
-    // Verificar categoria kids
     if (order.categoria === 'kids' || order.categoria === 'infantil') return true;
-    
-    // ← CORREÇÃO: Verificar se item.item existe antes de chamar toLowerCase()
     return order.itens?.some(item => 
       item.item && PRIORITY_KEYWORDS.some(keyword => 
         item.item.toLowerCase().includes(keyword)
@@ -181,17 +175,16 @@
     ) || false;
   }
 
-  // ← CORREÇÃO: Gerar ID único para item dentro do pedido
   function getItemId(orderId, setor, index) {
     return `${orderId}_${setor}_${index}`;
   }
 
   // ============================================================================
-  // ← NOVO: CACHE OFFLINE COM LOCALSTORAGE
+  // CACHE OFFLINE
   // ============================================================================
 
   const CACHE_KEY = 'kfm_orders_cache';
-  const CACHE_DURATION = 30 * 60 * 1000; // 30 minutos
+  const CACHE_DURATION = 30 * 60 * 1000;
 
   function cacheOrders(ordersToCache) {
     try {
@@ -199,7 +192,6 @@
         orders: ordersToCache,
         timestamp: Date.now()
       }));
-      console.log('💾 Pedidos salvos no cache offline');
     } catch (e) {
       console.warn('⚠️ Falha ao salvar cache:', e.message);
     }
@@ -210,23 +202,18 @@
       const cached = localStorage.getItem(CACHE_KEY);
       if (cached) {
         const { orders: cachedOrders, timestamp } = JSON.parse(cached);
-        // Verificar se cache é recente (< 30 min)
         if (Date.now() - timestamp < CACHE_DURATION) {
-          console.log('📦 Cache offline carregado (válido)');
+          console.log('📦 Cache offline carregado');
           return cachedOrders;
-        } else {
-          console.log('🗑️ Cache expirado, removendo');
-          localStorage.removeItem(CACHE_KEY);
         }
+        localStorage.removeItem(CACHE_KEY);
       }
     } catch (e) {
       console.warn('⚠️ Falha ao carregar cache:', e.message);
-      localStorage.removeItem(CACHE_KEY);
     }
     return null;
   }
 
-  // Limpar cache manualmente (para debug)
   function clearCache() {
     localStorage.removeItem(CACHE_KEY);
     console.log('🧹 Cache offline limpo');
@@ -248,15 +235,8 @@
         const roundTripTime = Date.now() - now;
         serverTimeOffset = serverTime - (now + roundTripTime / 2);
         lastTimeSync = Date.now();
-        console.log('🕐 Horário sincronizado. Offset:', serverTimeOffset, 'ms');
       }
     } catch (e) {
-      // Silencioso para não poluir logs em produção
-      if (window.location.hostname.includes('netlify')) {
-        console.debug('⚠️ Sync de horário indisponível (backend local pode estar offline)');
-      } else {
-        console.warn('⚠️ Não foi possível sincronizar horário:', e.message);
-      }
       serverTimeOffset = 0;
     }
   }
@@ -306,7 +286,7 @@
   }
 
   // ============================================================================
-  // SOM: Sistema de Alerta (Web Audio API - sem arquivos)
+  // SOM: Sistema de Alerta
   // ============================================================================
 
   function playDing(volume = 0.3) {
@@ -328,41 +308,21 @@
     } catch (e) { console.warn('⚠️ Som não reproduzido:', e.message); }
   }
 
-  // ← CORREÇÃO: Som de alerta para cancelamento (Web Audio API puro, sem arquivo)
   function playCancelAlert(volume = 0.4) {
     if (!soundEnabled) return;
     try {
       const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) return;
       const ctx = new AudioCtx();
-      
-      // Oscilador principal (tom agudo)
       const osc1 = ctx.createOscillator();
       const gain1 = ctx.createGain();
-      osc1.connect(gain1);
-      gain1.connect(ctx.destination);
+      osc1.connect(gain1); gain1.connect(ctx.destination);
       osc1.frequency.setValueAtTime(880, ctx.currentTime);
       osc1.frequency.exponentialRampToValueAtTime(440, ctx.currentTime + 0.15);
       gain1.gain.setValueAtTime(volume, ctx.currentTime);
       gain1.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
       osc1.type = 'square';
-      
-      // Segundo oscilador para efeito de "alarme" (batida)
-      const osc2 = ctx.createOscillator();
-      const gain2 = ctx.createGain();
-      osc2.connect(gain2);
-      gain2.connect(ctx.destination);
-      osc2.frequency.setValueAtTime(660, ctx.currentTime);
-      osc2.frequency.exponentialRampToValueAtTime(330, ctx.currentTime + 0.2);
-      gain2.gain.setValueAtTime(volume * 0.7, ctx.currentTime);
-      gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.45);
-      osc2.type = 'triangle';
-      
-      // Tocar ambos
       osc1.start(); osc1.stop(ctx.currentTime + 0.4);
-      osc2.start(); osc2.stop(ctx.currentTime + 0.45);
-      
-      // Limpar contexto
       setTimeout(() => ctx.close(), 500);
     } catch (e) { console.warn('⚠️ Som de cancelamento não reproduzido:', e.message); }
   }
@@ -395,7 +355,6 @@
     if (timerInterval) clearInterval(timerInterval);
     timerInterval = setInterval(() => {
       const now = Date.now();
-      // Atualizar timers na aba Geral (por pedido)
       orders.forEach(order => {
         if (order.status === 'em-preparo' && order.startedAt) {
           const started = new Date(order.startedAt).getTime();
@@ -406,22 +365,7 @@
             timerEl.className = `timer ${getTimeClass(elapsed)}`.trim();
           }
         }
-        // ← NOVO: Atualizar timers por item (se existirem)
-        if (order.itens) {
-          order.itens.forEach((item, idx) => {
-            if (item.status === 'em-preparo' && item.startedAt) {
-              const started = new Date(item.startedAt).getTime();
-              const elapsed = Math.floor((now - started) / 1000);
-              const itemTimerEl = $(`#item-timer-${order.id}-${idx}`);
-              if (itemTimerEl) {
-                itemTimerEl.textContent = formatTime(elapsed);
-                itemTimerEl.className = `mini-timer ${getTimeClass(elapsed)}`.trim();
-              }
-            }
-          });
-        }
       });
-      // Atualizar mini-timers na aba Setor
       $$('.mini-timer').forEach(el => {
         const startedAt = el.dataset.started;
         if (startedAt) {
@@ -445,6 +389,12 @@
   function connect() {
     console.log('🔌 Iniciando conexão (WebSocket com fallback HTTP)...');
     els.loadingStatus?.textContent = 'Conectando...';
+    
+    // Limpar timeouts anteriores
+    if (connectionRetryTimeout) {
+      clearTimeout(connectionRetryTimeout);
+      connectionRetryTimeout = null;
+    }
     
     let wsConnected = false;
     const wsTimeout = setTimeout(() => {
@@ -480,7 +430,7 @@
           updateConnectionStatus(false);
           if (isInitialized) {
             toast('Conexão perdida. Reconectando...', 'warning');
-            setTimeout(connect, 2000);
+            connectionRetryTimeout = setTimeout(connect, 2000);
           }
         }
       };
@@ -493,7 +443,7 @@
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          const { type, ...payload } = data;
+          const { type, payload } = data;
           handleServerMessage(type, payload);
         } catch (err) { console.error('❌ Erro ao parsear mensagem:', err); }
       };
@@ -535,7 +485,6 @@
       if (res.ok) {
         const data = await res.json();
         if (data.orders) {
-          // Detectar novos pedidos para notificação
           const oldIds = new Set(orders.map(o => o.id));
           const newOrders = data.orders.filter(o => !oldIds.has(o.id));
           
@@ -544,7 +493,6 @@
           renderAll();
           updateConnectionStatus(true);
           
-          // Notificar novos pedidos
           if (newOrders.length > 0) {
             newOrders.forEach(order => {
               toast(`🔔 Novo pedido: ${order.mesa}`, 'info', 3000);
@@ -582,18 +530,16 @@
     reconnectAttempts++;
     console.log(`🔄 Reconectando em ${delay}ms (tentativa ${reconnectAttempts}/${MAX_RECONNECT})`);
     els.loadingStatus?.textContent = `Reconectando em ${Math.ceil(delay / 1000)}s...`;
-    setTimeout(() => connect(), delay);
+    connectionRetryTimeout = setTimeout(() => connect(), delay);
   }
 
   // ← ATUALIZADO: send() funciona tanto via WebSocket quanto HTTP
   function send(type, payload = {}) {
-    // Tentar WebSocket primeiro
     if (ws?.readyState === WebSocket.OPEN && !useHttpPolling) {
       ws.send(JSON.stringify({ type, payload })); 
       return true;
     }
     
-    // Fallback: enviar via HTTP POST
     if (useHttpPolling) {
       fetch(`${BACKEND_URL}/api/command`, {
         method: 'POST',
@@ -604,7 +550,6 @@
       return true;
     }
     
-    // Sem conexão
     if (reconnectAttempts === 0) {
       toast('Sem conexão com o servidor. Verifique o Bridge.', 'error');
     }
@@ -729,7 +674,7 @@
   }
 
   // ============================================================================
-  // RENDER: Aba GERAL (com prioridade kids + observações + cache offline)
+  // RENDER: Aba GERAL
   // ============================================================================
 
   function renderGeral() {
@@ -789,7 +734,7 @@
               <div class="order-mesa" id="order-title-${order.id}">${escapeHtml(order.mesa)}</div>
               <span class="order-type ${order.tipo}" role="label">${order.tipo.toUpperCase()}</span>
               ${order.garcom && order.garcom !== 'Desconhecido' 
-                ? `<div class="order-garcom" title="Garçom responsável">👨‍🍳 ${escapeHtml(order.garcom)}</div>` 
+                ? `<div class="order-garcom" title="Garçom responsável">👨‍ ${escapeHtml(order.garcom)}</div>` 
                 : ''}
               ${order.observacoes ? `<div class="order-observations">${escapeHtml(order.observacoes).toUpperCase()}</div>` : ''}
             </div>
@@ -849,7 +794,7 @@
   }
 
   // ============================================================================
-  // RENDER: Aba SETOR (com prioridade + observações)
+  // RENDER: Aba SETOR
   // ============================================================================
 
   function renderSetor() {
@@ -961,7 +906,7 @@
   }
 
   // ============================================================================
-  // RENDER: Aba CONCLUÍDOS (com detalhamento por item)
+  // RENDER: Aba CONCLUÍDOS
   // ============================================================================
 
   function renderConcluidos() {
@@ -1027,7 +972,6 @@
     }).join('');
   }
 
-  // ← NOVO: Toggle para expandir detalhes do pedido concluído
   window.toggleCompletedDetails = (orderId) => {
     const details = $(`#details-${orderId}`);
     const expandIcon = details?.previousElementSibling?.querySelector('.expand-icon');
@@ -1116,7 +1060,6 @@
     });
   }
 
-  // ← NOVO: Fullscreen emergencial
   function tryFullscreen() {
     if (window.matchMedia('(display-mode: standalone)').matches) return;
     const elem = document.documentElement;
@@ -1126,7 +1069,7 @@
   }
 
   // ============================================================================
-  // ← NOVO: Ações por Item (controle granular)
+  // ← NOVO: Ações por Item
   // ============================================================================
 
   window.startItem = (orderId, itemIndex) => {
@@ -1169,7 +1112,7 @@
   };
 
   // ============================================================================
-  // Ações Globais (pedido inteiro) - Mantidas para compatibilidade
+  // Ações Globais
   // ============================================================================
 
   window.startOrder = (id) => {
@@ -1285,7 +1228,6 @@
     console.log('🚀 Inicializando Kitchen Flow v2.1.8...');
     startClock(); setupTabs(); setupConfigPanel(); setupSound(); setupTouchOptimizations();
     
-    // ← NOVO: Tentar carregar do cache se estiver offline na inicialização
     if (!navigator.onLine) {
       const cached = loadCachedOrders();
       if (cached) {
@@ -1304,7 +1246,6 @@
     console.log('📊 Comandos disponíveis: window.KFM');
     console.log('💾 Cache offline: use window.KFM.clearCache() para limpar');
     
-    // ← NOVO: Mostrar dica de configuração se estiver no Netlify sem backend configurado
     if (window.location.hostname.includes('netlify') && !localStorage.getItem('kfm_backend_url')) {
       setTimeout(() => {
         toast('⚙️ Configure o IP do Bridge nas configurações (engrenagem) para conectar.', 'warning', 8000);
@@ -1330,6 +1271,7 @@
   window.addEventListener('beforeunload', () => { 
     stopTimers(); 
     if (httpPollingInterval) clearInterval(httpPollingInterval);
+    if (connectionRetryTimeout) clearTimeout(connectionRetryTimeout);
     if (ws?.readyState === WebSocket.OPEN) ws.close(); 
   });
 

@@ -1,43 +1,47 @@
 {
+  "id": "/waiter.html",
   "name": "Kitchen Flow - Garçom",
   "short_name": "KF Garçom",
   "description": "Acompanhe seus pedidos em tempo real e receba notificações quando estiverem prontos",
   "start_url": "/waiter.html",
+  "scope": "/waiter.html",
   "display": "standalone",
+  "orientation": "portrait-primary",
   "background_color": "#1a1a2e",
   "theme_color": "#1a1a2e",
-  "orientation": "portrait",
-  "scope": "/",
   "lang": "pt-BR",
+  "dir": "ltr",
   "categories": ["food", "business", "productivity"],
   "icons": [
     {
-      "src": "fazenda.png",
+      "src": "fazenda-waiter-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
-      "src": "fazenda.png",
+      "src": "fazenda-waiter-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "fazenda-waiter-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
-    }
-  ],
-  "screenshots": [
-    {
-      "src": "screenshots/waiter-home.png",
-      "sizes": "1080x1920",
-      "type": "image/png",
-      "form_factor": "narrow",
-      "label": "Lista de pedidos do garçom"
+      "purpose": "any"
     },
     {
-      "src": "screenshots/waiter-ready.png",
-      "sizes": "1080x1920",
+      "src": "fazenda-waiter-512.png",
+      "sizes": "512x512",
       "type": "image/png",
-      "form_factor": "narrow",
-      "label": "Notificação de pedido pronto"
+      "purpose": "maskable"
+    },
+    {
+      "src": "fazenda-waiter-512.png",
+      "sizes": "196x196",
+      "type": "image/png",
+      "purpose": "any"
     }
   ],
   "shortcuts": [
@@ -46,23 +50,22 @@
       "short_name": "Pedidos",
       "description": "Ver meus pedidos ativos",
       "url": "/waiter.html?filter=pending",
-      "icons": [{ "src": "fazenda.png", "sizes": "192x192" }]
+      "icons": [{ "src": "fazenda-waiter-192.png", "sizes": "192x192" }]
     },
     {
       "name": "Prontos para Retirada",
       "short_name": "Prontos",
       "description": "Ver pedidos prontos na boqueta",
       "url": "/waiter.html?filter=ready",
-      "icons": [{ "src": "fazenda.png", "sizes": "192x192" }]
+      "icons": [{ "src": "fazenda-waiter-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Prioridade (Kids/Porções)",
+      "short_name": "Prioridade",
+      "description": "Ver pedidos prioritários",
+      "url": "/waiter.html?filter=priority",
+      "icons": [{ "src": "fazenda-waiter-192.png", "sizes": "192x192" }]
     }
   ],
-  "prefer_related_applications": false,
-  "related_applications": [],
-  "features": [
-    "Cross-platform",
-    "Notifications",
-    "Offline support",
-    "Push notifications",
-    "Background sync"
-  ]
+  "prefer_related_applications": false
 }

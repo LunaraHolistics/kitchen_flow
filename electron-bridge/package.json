@@ -9,13 +9,15 @@
     "dev": "electron . --dev",
     "build": "npx electron-builder --win",
     "build:dir": "npx electron-builder --dir --win",
+    "build:portable": "npx electron-builder --win portable",
     "postinstall": "echo Skipping postinstall"
   },
   "dependencies": {
     "chokidar": "^3.5.3",
     "dotenv": "^16.3.1",
     "moment": "^2.29.4",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "ws": "^8.14.2"
   },
   "devDependencies": {
     "7zip-bin": "^5.2.0",

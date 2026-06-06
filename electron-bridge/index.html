@@ -29,7 +29,7 @@
     .header .version { font-size: 11px; color: #9ca3af; }
     .header .credits { font-size: 10px; color: #6b7280; margin-top: 4px; }
     
-    /* ← NOVO: PIN Display */
+    /* PIN Display */
     .pin-display {
       background: linear-gradient(135deg, #16213e, #1a1a2e);
       border: 2px solid #ffc107;
@@ -69,7 +69,7 @@
     .pin-reveal-btn:hover { background: rgba(255, 193, 7, 0.1); }
     .pin-reveal-btn:active { background: #ffc107; color: #1a1a2e; }
     
-    /* ← NOVO: Access Info Box */
+    /* Access Info Box */
     .access-info {
       background: linear-gradient(135deg, #16213e, #1a1a2e);
       border: 1px solid #00d9a5; border-radius: 12px; padding: 16px;
@@ -100,7 +100,7 @@
     }
     .access-qr small { display: block; color: #9ca3af; margin-top: 6px; font-size: 10px; }
     
-    /* ← NOVO: Fallback para QR Code */
+    /* Fallback para QR Code */
     .qr-fallback {
       text-align: center; padding: 10px; background: #0f3460;
       border-radius: 8px; margin-top: 10px;
@@ -232,7 +232,7 @@
       to { opacity: 1; transform: translate(-50%, 0); }
     }
     
-    /* ← NOVO: Toast Notifications com classe CSS */
+    /* Toast Notifications */
     .toast-notification {
       position: fixed; bottom: 20px; left: 50%;
       transform: translateX(-50%) translateY(-20px);
@@ -252,12 +252,11 @@
     <!-- Header -->
     <header class="header">
       <h1>🍳 Kitchen Flow Bridge</h1>
-      <!-- ← CORREÇÃO #1: Versão atualizada para 2.1.7 -->
-      <div class="version">v<span id="appVersion">2.1.7</span></div>
+      <div class="version">v<span id="appVersion">2.1.8</span></div>
       <div class="credits">CLB Studio - Celso Luiz</div>
     </header>
 
-    <!-- ← NOVO: PIN Display -->
+    <!-- PIN Display -->
     <div id="pinDisplay" class="pin-display">
       <div class="pin-header">
         <div class="pin-title">
@@ -274,7 +273,7 @@
       <button id="revealPinBtn" class="pin-reveal-btn">👁️ Revelar código temporariamente</button>
     </div>
 
-    <!-- ← NOVO: Access Info Box (URL + PWA Guide) -->
+    <!-- Access Info Box -->
     <div id="accessInfo" class="access-info">
       <div class="access-title">
         <span class="pin-icon">📱</span>
@@ -288,7 +287,6 @@
       
       <div class="access-qr">
         <img id="qrCode" src="" alt="QR Code para acesso" style="display:none">
-        <!-- ← CORREÇÃO #2: Fallback visual para QR Code -->
         <div id="qrFallback" class="qr-fallback hidden">
           <small style="color:#9ca3af">QR Code indisponível</small><br>
           <strong id="qrUrlText" style="color:#00d9a5; font-family:monospace; font-size:1.1rem; word-break:break-all">
@@ -330,7 +328,6 @@
       <div class="status-row">
         <span class="status-label">🔗 IP Local:</span>
         <span class="status-value" id="localIp">Detectando...</span>
-        <!-- ← CORREÇÃO #3: Botão para re-tentar detecção de IP -->
         <button id="retryIpBtn" class="btn btn-small btn-secondary" style="margin-left:8px" title="Re-tentar detecção">🔄</button>
       </div>
     </div>
@@ -380,14 +377,12 @@
       clearHistoryBtn: document.getElementById('clearHistoryBtn'),
       historyList: document.getElementById('historyList'),
       licenseLink: document.getElementById('licenseLink'),
-      // ← NOVO: Elementos do PIN
       pinDisplay: document.getElementById('pinDisplay'),
       pinCode: document.getElementById('pinCode'),
       pinSource: document.getElementById('pinSource'),
       pinValid: document.getElementById('pinValid'),
       copyPinBtn: document.getElementById('copyPinBtn'),
       revealPinBtn: document.getElementById('revealPinBtn'),
-      // ← NOVO: Elementos de Acesso
       accessInfo: document.getElementById('accessInfo'),
       accessUrl: document.getElementById('accessUrl'),
       copyUrlBtn: document.getElementById('copyUrlBtn'),
@@ -395,7 +390,7 @@
       qrFallback: document.getElementById('qrFallback'),
       qrUrlText: document.getElementById('qrUrlText'),
       localIp: document.getElementById('localIp'),
-      retryIpBtn: document.getElementById('retryIpBtn') // ← CORREÇÃO #3
+      retryIpBtn: document.getElementById('retryIpBtn')
     };
 
     // Estado local
@@ -412,10 +407,8 @@
         return;
       }
 
-      // Detectar IP local para montar a URL de acesso
       detectLocalIp();
 
-      // Carregar configurações
       try {
         const config = await window.bridgeAPI.getConfig();
         currentConfig = config;
@@ -425,7 +418,6 @@
         els.statusText.textContent = '⚠️ Erro de conexão';
       }
 
-      // ← NOVO: Carregar informações do PIN e acesso
       try {
         const pinInfo = await window.bridgeAPI.getWaiterPinInfo();
         if (pinInfo.success && pinInfo.isToday) {
@@ -436,26 +428,19 @@
         console.log('PIN info não disponível ainda:', e.message);
       }
 
-      // Carregar histórico
       await loadHistory();
-
-      // Configurar listeners
       setupEventListeners();
       setupBridgeListeners();
-
-      // Verificar licença
       checkLicense();
     }
 
-    // ← NOVO: Detectar IP local da máquina
+    // Detectar IP local
     async function detectLocalIp() {
       try {
-        // Tentar via API do Bridge (se disponível)
         const status = await window.bridgeAPI.getStatus?.();
         if (status?.localIp) {
           localIpAddress = status.localIp;
         } else {
-          // Fallback: tentar via WebRTC (funciona na maioria dos navegadores)
           const ip = await getLocalIpViaWebRTC();
           if (ip) localIpAddress = ip;
         }
@@ -465,7 +450,6 @@
           updateAccessUrl();
         } else {
           els.localIp.textContent = 'Não detectado';
-          // ← CORREÇÃO #3: Mostrar botão de retry se falhar
           if (els.retryIpBtn) els.retryIpBtn.style.display = 'inline-flex';
         }
       } catch (e) {
@@ -475,7 +459,7 @@
       }
     }
 
-    // ← NOVO: Fallback para detectar IP via WebRTC
+    // Fallback WebRTC
     function getLocalIpViaWebRTC() {
       return new Promise((resolve) => {
         const pc = new RTCPeerConnection({ iceServers: [] });
@@ -492,12 +476,11 @@
           }
         };
         
-        // Timeout de 2 segundos
         setTimeout(() => { pc.close(); resolve(null); }, 2000);
       });
     }
 
-    // ← NOVO: Atualizar URL de acesso exibida
+    // Atualizar URL de acesso
     function updateAccessUrl() {
       if (!localIpAddress) return;
       
@@ -506,15 +489,12 @@
       
       els.accessUrl.textContent = url;
       
-      // ← CORREÇÃO #2: Atualizar fallback do QR Code também
       if (els.qrUrlText) els.qrUrlText.textContent = url;
       
-      // Gerar QR Code via API pública (opcional)
       const qrApi = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(url)}`;
       els.qrCode.src = qrApi;
       els.qrCode.style.display = 'inline-block';
       
-      // ← CORREÇÃO #2: Fallback visual se QR Code falhar
       els.qrCode.onerror = () => {
         els.qrCode.style.display = 'none';
         if (els.qrFallback && els.qrUrlText) {
@@ -522,21 +502,17 @@
           els.qrFallback.classList.remove('hidden');
         }
       };
-      // Esconder fallback se QR carregar com sucesso
       els.qrCode.onload = () => {
         if (els.qrFallback) els.qrFallback.classList.add('hidden');
       };
     }
 
-    // ← NOVO: Exibir seção de acesso
     function showAccessInfo() {
       if (!els.accessInfo) return;
-      
       updateAccessUrl();
       els.accessInfo.classList.add('visible');
     }
 
-    // ← NOVO: Exibir PIN na UI
     function showPinDisplay(pinInfo) {
       if (!els.pinDisplay) return;
       
@@ -549,24 +525,19 @@
       els.pinValid.textContent = `Válido até 23:59`;
       
       els.pinDisplay.classList.add('visible');
-      
-      // Toast de notificação
       showToast('🔑 PIN do Garçom disponível', 'info', 4000);
     }
 
-    // Atualizar UI com config
     function updateUI(config) {
       els.statusText.textContent = '✅ Online';
       els.statusText.closest('.status-row').querySelector('.status-icon').className = 'status-icon online';
       els.downloadPath.textContent = config.DOWNLOAD_PATH || 'Não configurado';
       els.backendUrl.textContent = new URL(config.BACKEND_URL).hostname;
       els.bridgeId.textContent = config.bridgeId || 'N/A';
-      // ← CORREÇÃO #1: Usar versão do config ou fallback 2.1.7
-      els.appVersion.textContent = config.version || '2.1.7';
+      els.appVersion.textContent = config.version || '2.1.8';
       els.pathInput.value = config.DOWNLOAD_PATH || '';
     }
 
-    // Carregar histórico
     async function loadHistory() {
       try {
         currentHistory = await window.bridgeAPI.getHistory();
@@ -576,7 +547,6 @@
       }
     }
 
-    // Renderizar histórico
     function renderHistory() {
       if (currentHistory.length === 0) {
         els.historyList.innerHTML = '<div class="history-empty">Nenhuma captura ainda</div>';
@@ -600,9 +570,7 @@
       els.historyList.innerHTML = html;
     }
 
-    // Configurar listeners de botão
     function setupEventListeners() {
-      // ← NOVO: Copiar PIN
       els.copyPinBtn?.addEventListener('click', async () => {
         try {
           const result = await window.bridgeAPI.getCurrentPin();
@@ -610,7 +578,6 @@
             await navigator.clipboard.writeText(result.fullPin);
             showToast('📋 PIN copiado!', 'success', 2000);
             
-            // Feedback visual no botão
             const originalText = els.copyPinBtn.textContent;
             els.copyPinBtn.textContent = '✅ Copiado!';
             setTimeout(() => {
@@ -622,16 +589,13 @@
         }
       });
 
-      // ← NOVO: Revelar PIN temporariamente
       els.revealPinBtn?.addEventListener('click', async () => {
         try {
           const result = await window.bridgeAPI.getCurrentPin();
           if (result.success && result.fullPin) {
-            // Mostrar PIN completo
             els.pinCode.textContent = result.fullPin;
             els.pinCode.classList.add('revealed');
             
-            // Esconder após 5 segundos
             clearTimeout(revealTimeout);
             revealTimeout = setTimeout(() => {
               els.pinCode.textContent = result.maskedPin;
@@ -645,7 +609,6 @@
         }
       });
 
-      // ← NOVO: Copiar URL de acesso
       els.copyUrlBtn?.addEventListener('click', async () => {
         const url = els.accessUrl?.textContent;
         if (url && url.startsWith('http')) {
@@ -653,7 +616,6 @@
             await navigator.clipboard.writeText(url);
             showToast('🔗 URL copiada!', 'success', 2000);
             
-            // Feedback visual
             const originalText = els.copyUrlBtn.textContent;
             els.copyUrlBtn.textContent = '✅ Copiado!';
             setTimeout(() => {
@@ -665,7 +627,6 @@
         }
       });
 
-      // ← CORREÇÃO #3: Re-tentar detecção de IP
       els.retryIpBtn?.addEventListener('click', async () => {
         els.retryIpBtn.disabled = true;
         els.retryIpBtn.textContent = '⏳';
@@ -683,7 +644,6 @@
         }
       });
 
-      // Alterar pasta
       els.changePathBtn.addEventListener('click', async () => {
         try {
           const newPath = prompt('Digite o novo caminho da pasta:', currentConfig?.DOWNLOAD_PATH);
@@ -701,7 +661,6 @@
         }
       });
 
-      // Recarregar cardápio
       els.reloadMenuBtn.addEventListener('click', async () => {
         try {
           const result = await window.bridgeAPI.reloadMenu();
@@ -714,7 +673,6 @@
         }
       });
 
-      // Testar captura
       els.testBtn.addEventListener('click', async () => {
         try {
           await window.bridgeAPI.triggerTest();
@@ -725,7 +683,6 @@
         }
       });
 
-      // Limpar histórico
       els.clearHistoryBtn.addEventListener('click', async () => {
         if (confirm('Limpar todo o histórico?')) {
           await window.bridgeAPI.clearHistory();
@@ -735,34 +692,28 @@
         }
       });
 
-      // Link de licença
       els.licenseLink.addEventListener('click', (e) => {
         e.preventDefault();
         checkLicense();
       });
     }
 
-    // Configurar listeners do bridgeAPI
     function setupBridgeListeners() {
-      // Histórico atualizado
       window.bridgeAPI.onHistoryUpdated?.((history) => {
         currentHistory = history;
         renderHistory();
       });
 
-      // Config atualizada
       window.bridgeAPI.onConfigUpdated?.((config) => {
         if (config.downloadPath) {
           els.downloadPath.textContent = config.downloadPath;
           els.pathInput.value = config.downloadPath;
         }
-        // Atualizar URL de acesso se o IP/porta mudou
         if (config.httpPort) {
           updateAccessUrl();
         }
       });
 
-      // ← NOVO: PIN atualizado
       window.bridgeAPI.onPinUpdated?.((data) => {
         if (data && data.maskedPin) {
           showPinDisplay({
@@ -770,18 +721,16 @@
             source: data.source,
             validFor: data.validFor
           });
-          showAccessInfo(); // Garantir que a seção de acesso apareça
+          showAccessInfo();
         }
       });
 
-      // Arquivo detectado
       window.bridgeAPI.onFileDetected?.((data) => {
         console.log('📄 Arquivo detectado:', data);
         loadHistory();
       });
     }
 
-    // Verificar licença
     async function checkLicense() {
       try {
         const status = await window.bridgeAPI.getLicenseStatus();
@@ -795,7 +744,6 @@
       }
     }
 
-    // ← CORREÇÃO #4: Mostrar toast com classe CSS em vez de estilo inline
     function showToast(message, type = 'info', duration = 3000) {
       const toast = document.createElement('div');
       toast.className = `toast-notification ${type}`;
@@ -803,13 +751,11 @@
       toast.setAttribute('role', 'alert');
       document.body.appendChild(toast);
       
-      // Animação de entrada
       requestAnimationFrame(() => {
         toast.style.opacity = '1';
         toast.style.transform = 'translateX(-50%) translateY(0)';
       });
       
-      // Auto-remover
       setTimeout(() => {
         toast.style.opacity = '0';
         toast.style.transform = 'translateX(-50%) translateY(-20px)';
@@ -817,14 +763,12 @@
       }, duration);
     }
 
-    // Escape HTML
     function escapeHtml(text) {
       const div = document.createElement('div');
       div.textContent = text;
       return div.innerHTML;
     }
 
-    // Iniciar
     document.addEventListener('DOMContentLoaded', init);
   </script>
 </body>

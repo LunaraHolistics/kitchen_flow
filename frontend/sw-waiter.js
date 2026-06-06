@@ -1,22 +1,21 @@
 /**
- * Kitchen Flow - Service Worker para Página do Garçom v1.1
+ * Kitchen Flow - Service Worker para Página do Garçom v1.4
  * Funcionalidades: Cache offline, notificações push, background sync
  * Notas: Requer HTTPS para notificações push em produção
  */
 
-const CACHE_NAME = 'kfm-waiter-v1.1';  // ← Atualizado para invalidar cache antigo
+const CACHE_NAME = 'kfm-waiter-v1.4';  // ← Atualizado para v1.4
 const ASSETS_TO_CACHE = [
   '/waiter.html',
   '/waiter.js',
   '/waiter.css',
-  '/fazenda-waiter-192.png',  // ← Ícone PWA Android
-  '/fazenda-waiter-512.png',  // ← Ícone PWA Android grande
-  '/waiter-manifest.json'     // ← Manifest para instalação
+  '/fazenda-waiter-192.png',
+  '/fazenda-waiter-512.png',
+  '/waiter-manifest.json'
 ];
 
-// ← NOVO: API_BASE flexível - detecta hostname dinamicamente
+// API_BASE flexível - detecta hostname dinamicamente
 function getAPIBase() {
-  // Em produção, usa o mesmo hostname/porta da página
   const url = new URL(self.location.href);
   return `${url.protocol}//${url.hostname}:${url.port}`;
 }
@@ -75,7 +74,7 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
   
-  // ← CORREÇÃO #2: Detectar API do garçom por porta + pathname (não hostname)
+  // Detectar API do garçom por porta + pathname
   const isWaiterAPI = url.port === '4545' && url.pathname.startsWith('/api/waiter/');
   
   if (isWaiterAPI) {
@@ -90,7 +89,6 @@ self.addEventListener('fetch', (event) => {
         .then((cached) => {
           if (cached) return cached;
           return fetch(request).then((response) => {
-            // Cachear novo asset se resposta OK
             if (response.ok) {
               const clone = response.clone();
               caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
@@ -98,7 +96,7 @@ self.addEventListener('fetch', (event) => {
             return response;
           });
         })
-        .catch(() => caches.match('/waiter.html')) // Fallback para SPA
+        .catch(() => caches.match('/waiter.html'))
     );
     return;
   }
@@ -107,7 +105,6 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     fetch(request)
       .then((response) => {
-        // Cachear respostas GET bem-sucedidas (apenas HTML/JSON)
         if (request.method === 'GET' && response.ok) {
           const contentType = response.headers.get('content-type');
           if (contentType?.includes('application/json') || contentType?.includes('text/html')) {
@@ -124,32 +121,28 @@ self.addEventListener('fetch', (event) => {
 });
 
 // ============================================================================
-// ← NOVO: Handler para Requests da API com Cache Inteligente
+// Handler para Requests da API com Cache Inteligente
 // ============================================================================
 async function handleApiRequest(request) {
   const cache = await caches.open(CACHE_NAME);
   
-  // ← CORREÇÃO #3: Normalizar URL para evitar cache bloat com query strings
+  // Normalizar URL para evitar cache bloat
   const url = new URL(request.url);
-  const cleanUrl = url.origin + url.pathname; // Remove query strings
+  const cleanUrl = url.origin + url.pathname;
   const cacheKey = `${cleanUrl}-${request.method}`;
   
   try {
-    // Tentar rede primeiro (dados frescos)
+    // Tentar rede primeiro
     const networkResponse = await fetch(request, { 
       cache: 'no-cache',
       headers: { 'Accept': 'application/json' },
-      mode: 'cors' // ← CORREÇÃO #4: Suporte a CORS
+      mode: 'cors'
     });
     
     if (networkResponse.ok) {
-      // Cachear resposta para fallback offline
       const responseClone = networkResponse.clone();
       await cache.put(cacheKey, responseClone);
-      
-      // Atualizar timestamp do cache
       await cache.put(`${cacheKey}-timestamp`, new Response(Date.now().toString()));
-      
       return networkResponse;
     }
   } catch (networkError) {
@@ -159,7 +152,6 @@ async function handleApiRequest(request) {
   // Fallback: tentar cache
   const cached = await cache.match(cacheKey);
   if (cached) {
-    // Verificar se cache não expirou
     const timestampResponse = await cache.match(`${cacheKey}-timestamp`);
     if (timestampResponse) {
       const timestamp = await timestampResponse.text();
@@ -176,7 +168,7 @@ async function handleApiRequest(request) {
     }
   }
   
-  // Sem rede e sem cache válido: retornar resposta de fallback
+  // Sem rede e sem cache válido
   return new Response(
     JSON.stringify({ 
       success: false, 
@@ -187,19 +179,18 @@ async function handleApiRequest(request) {
       status: 503,
       headers: { 
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*' // ← Suporte a CORS
+        'Access-Control-Allow-Origin': '*'
       }
     }
   );
 }
 
 // ============================================================================
-// ← NOVO: Notificações Push (para pedidos prontos)
+// Notificações Push
 // ============================================================================
 self.addEventListener('push', (event) => {
   if (!event.data) return;
   
-  // ← CORREÇÃO #4: Verificar se notificações são suportadas (HTTPS necessário)
   if (self.location.protocol !== 'https:' && self.location.hostname !== 'localhost') {
     console.warn('⚠️ [SW] Notificações push requerem HTTPS em produção');
     return;
@@ -212,7 +203,7 @@ self.addEventListener('push', (event) => {
     event.waitUntil(
       self.registration.showNotification(title, {
         body,
-        icon: icon || '/fazenda-waiter-192.png', // ← Ícone atualizado
+        icon: icon || '/fazenda-waiter-192.png',
         tag: tag || 'kfm-order',
         requireInteraction: requireInteraction !== false,
         actions: [
@@ -228,23 +219,20 @@ self.addEventListener('push', (event) => {
 });
 
 // ============================================================================
-// ← NOVO: Clique em Notificação
+// Clique em Notificação
 // ============================================================================
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   
   if (event.action === 'view' || !event.action) {
-    // Abrir a página do garçom
     event.waitUntil(
       clients.matchAll({ type: 'window', includeUncontrolled: true })
         .then((clientList) => {
-          // Focar janela existente se disponível
           for (const client of clientList) {
             if (client.url.includes('/waiter.html') && 'focus' in client) {
               return client.focus();
             }
           }
-          // Ou abrir nova janela
           if (clients.openWindow) {
             return clients.openWindow(event.notification.data?.url || '/waiter.html');
           }
@@ -254,17 +242,15 @@ self.addEventListener('notificationclick', (event) => {
 });
 
 // ============================================================================
-// ← NOVO: Background Sync (para quando voltar online)
+// Background Sync
 // ============================================================================
 self.addEventListener('sync', (event) => {
   if (event.tag === 'sync-orders') {
     console.log('🔄 [SW] Background sync: sincronizando pedidos...');
     event.waitUntil(
-      // Disparar fetch para atualizar dados quando online
-      fetch(`${getAPIBase()}/api/waiter/orders`) // ← Usa API base dinâmica
+      fetch(`${getAPIBase()}/api/waiter/orders`)
         .then(response => response.json())
         .then(data => {
-          // Notificar todas as janelas abertas
           return self.clients.matchAll().then(clients => {
             clients.forEach(client => {
               client.postMessage({ 
@@ -280,19 +266,17 @@ self.addEventListener('sync', (event) => {
 });
 
 // ============================================================================
-// ← NOVO: Mensagens do Client para o Service Worker
+// Mensagens do Client para o Service Worker
 // ============================================================================
 self.addEventListener('message', (event) => {
   if (!event.data) return;
   
   switch (event.data.type) {
     case 'SKIP_WAITING':
-      // Permitir que o SW assuma o controle imediatamente
       self.skipWaiting();
       break;
       
     case 'CACHE_ORDERS':
-      // Cachear manualmente uma lista de pedidos
       if (event.data.orders) {
         event.waitUntil(
           caches.open(CACHE_NAME).then(cache => {
@@ -306,13 +290,11 @@ self.addEventListener('message', (event) => {
       break;
       
     case 'REQUEST_NOTIFICATION_PERMISSION':
-      // Solicitar permissão de notificação em nome do client
-      // ← CORREÇÃO #4: Verificar suporte antes de tentar
       if (self.location.protocol === 'https:' || self.location.hostname === 'localhost') {
         event.waitUntil(
           self.registration.showNotification('🔔 Notificações', {
             body: 'Ative as notificações para ser avisado quando pedidos estiverem prontos!',
-            icon: '/fazenda-waiter-192.png', // ← Ícone atualizado
+            icon: '/fazenda-waiter-192.png',
             requireInteraction: true,
             actions: [
               { action: 'enable', title: 'Ativar' },
@@ -334,8 +316,7 @@ function log(...args) {
   console.log('[SW]', ...args);
 }
 
-// Mensagem de inicialização
-console.log('✅ [SW] Kitchen Flow Waiter Service Worker v1.1 carregado');
+console.log('✅ [SW] Kitchen Flow Waiter Service Worker v1.4 carregado');
 console.log('📦 Cache:', CACHE_NAME);
 console.log('🔄 TTL da API:', CACHE_TTL / 1000 / 60, 'minutos');
 console.log('🌐 API Base dinâmica:', getAPIBase());

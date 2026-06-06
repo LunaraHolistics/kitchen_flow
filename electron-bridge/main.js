@@ -7,6 +7,7 @@ const { v4: uuidv4 } = require('uuid');
 const moment = require('moment');
 const Watcher = require('./watcher');
 const http = require('http');
+const WebSocket = require('ws'); // ← NOVO: Importar WebSocket
 const { exec } = require('child_process');
 const dotenv = require('dotenv');
 
@@ -39,7 +40,7 @@ loadEnvConfig();
 // ============================================================================
 const APP_META = {
   name: 'Kitchen Flow Bridge',
-  version: '2.1.7', // ← Atualizado para versão com correções de rede
+  version: '2.1.8', // ← Atualizado: Adicionado suporte a WebSocket
   author: 'CLB Studio - by Celso Luiz',
   description: 'Bridge para monitorar downloads do Saipos'
 };
@@ -107,6 +108,7 @@ let mainWindow = null;
 let tray = null;
 let watcher = null;
 let httpServer = null;
+let wss = null; // ← NOVO: Servidor WebSocket
 let isQuitting = false;
 const BRIDGE_ID = uuidv4().slice(0, 8);
 const BACKUP_DIR = path.join(process.env.USERPROFILE || 'C:\\', 'KitchenFlow', 'backup');
@@ -514,6 +516,84 @@ function updateActiveOrdersCache(orderData) {
 }
 
 // ============================================================================
+// ← NOVO: SERVIDOR WEBSOCKET PARA TABLET EM TEMPO REAL
+// ============================================================================
+
+function createWebSocketServer(server) {
+  wss = new WebSocket.Server({ server });
+  
+  wss.on('connection', (ws) => {
+    const clientId = uuidv4().slice(0, 8);
+    console.log(`🔌 Cliente WebSocket conectado: ${clientId}`);
+    
+    // Enviar mensagem de inicialização
+    ws.send(JSON.stringify({
+      type: 'INIT',
+      payload: {
+        orders: getActiveOrders(),
+        clientId: clientId
+      }
+    }));
+    
+    ws.on('message', (message) => {
+      try {
+        const data = JSON.parse(message);
+        console.log(`📥 Mensagem de ${clientId}:`, data.type);
+        
+        // Handler de mensagens do tablet
+        switch(data.type) {
+          case 'PING':
+            ws.send(JSON.stringify({
+              type: 'PONG',
+              payload: { timestamp: Date.now() }
+            }));
+            break;
+            
+          case 'UPDATE_STATUS':
+            // Atualizar status do pedido (iniciar/concluir)
+            console.log('📝 Atualização de status recebida:', data.payload);
+            // Aqui você pode adicionar lógica para persistir no banco se necessário
+            break;
+            
+          case 'REQUEST_SYNC':
+            // Forçar sincronização
+            ws.send(JSON.stringify({
+              type: 'ORDER_UPDATED',
+              payload: {
+                orders: getActiveOrders()
+              }
+            }));
+            break;
+        }
+      } catch (e) {
+        console.error('❌ Erro ao processar mensagem WebSocket:', e.message);
+      }
+    });
+    
+    ws.on('close', () => {
+      console.log(`🔌 Cliente WebSocket desconectado: ${clientId}`);
+    });
+    
+    ws.on('error', (error) => {
+      console.error(`❌ Erro WebSocket (${clientId}):`, error.message);
+    });
+  });
+  
+  console.log('🌐 Servidor WebSocket iniciado na mesma porta HTTP');
+}
+
+// ← NOVO: Função para notificar todos os clientes WebSocket
+function broadcastToWebSockets(type, payload) {
+  if (!wss) return;
+  
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(JSON.stringify({ type, payload }));
+    }
+  });
+}
+
+// ============================================================================
 // PARSER SAIPos V2.1
 // ============================================================================
 function parseSaiposFile(filePath) {
@@ -709,6 +789,9 @@ async function handleNewFile(originalPath, source = 'watcher') {
     const orderData = generateOrderFromParsedData(parsedData);
     await sendOrderToBackend(backupPath, orderData);
 
+    // ← NOVO: Notificar clientes WebSocket sobre novo pedido
+    broadcastToWebSockets('NEW_ORDER', { order: orderData });
+
     // ← NOVO: Atualizar cache do endpoint do garçom
     updateActiveOrdersCache(orderData);
 
@@ -754,10 +837,10 @@ async function sendOrderToBackend(filePath, mockData) {
     mockData,
     bridgeId: BRIDGE_ID,
     timestamp: moment().toISOString(),
-    parserVersion: '2.1.7' // ← Atualizado
+    parserVersion: '2.1.8' // ← Atualizado
   };
 
-  const headers = { 'Content-Type': 'application/json', 'User-Agent': 'KitchenFlowBridge/2.1.7' };
+  const headers = { 'Content-Type': 'application/json', 'User-Agent': 'KitchenFlowBridge/2.1.8' };
   if (CONFIG.API_KEY) headers['X-API-Key'] = CONFIG.API_KEY;
 
   try {
@@ -1064,11 +1147,11 @@ function startWatcher() {
     }
   }
   watcher = new Watcher(CONFIG.DOWNLOAD_PATH, { onNewFile: handleNewFile });
-  log('INFO', `✅ V2.1.7 Ativo | Monitorando: ${CONFIG.DOWNLOAD_PATH}`);
+  log('INFO', `✅ V2.1.8 Ativo | Monitorando: ${CONFIG.DOWNLOAD_PATH}`);
 }
 
 // ============================================================================
-// SERVIDOR HTTP PARA EXTENSÃO DO NAVEGADOR + GARÇOM
+// SERVIDOR HTTP + WEBSOCKET COMBINADOS
 // ============================================================================
 function startHttpServer() {
   // ← NOVO: Verificar conflito de porta antes de iniciar
@@ -1274,12 +1357,17 @@ function startServerOnPort(port) {
     }
   });
 
+  // ← NOVO: Criar servidor WebSocket na mesma porta HTTP
   httpServer.listen(port, '0.0.0.0', () => {
     log('INFO', `🌐 API HTTP rodando em http://0.0.0.0:${port}`);
+    log('INFO', ` WebSocket rodando em ws://0.0.0.0:${port}`);
     log('INFO', `📱 Endpoint do garçom: GET /api/waiter/orders?garcom=Nome`);
     log('INFO', `🔑 Endpoint do PIN: GET /api/waiter/pin`);
     log('INFO', `📄 Servidor de arquivos: frontend/ → /waiter.html, /waiter.js, etc.`);
     log('INFO', `🔗 URL para tablet/garçom: http://[IP-DO-PC]:${port}/waiter.html`);
+    
+    // Inicializar WebSocket server
+    createWebSocketServer(httpServer);
   });
 
   httpServer.on('error', (err) => {
@@ -1313,7 +1401,8 @@ ipcMain.handle('get-status', () => ({
   bridgeId: BRIDGE_ID,
   backupDir: BACKUP_DIR,
   memory: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
-  httpPort: httpServer?.address()?.port || 4545
+  httpPort: httpServer?.address()?.port || 4545,
+  websocketPort: wss ? httpServer?.address()?.port : null
 }));
 
 ipcMain.handle('trigger-test', () => watcher?.triggerTest?.());
@@ -1465,7 +1554,7 @@ app.whenReady().then(() => {
     showNotification(`Teste: ${licStatus.daysLeft} dias restantes`, 'Entre em contato para ativar.', 'info');
   }
 
-  log('INFO', '🚀 Kitchen Flow Bridge V2.1.7 iniciando...');
+  log('INFO', '🚀 Kitchen Flow Bridge V2.1.8 iniciando...');
 
   // ← NOVO: Inicializar PIN do garçom no startup
   getWaiterPin();
@@ -1475,7 +1564,7 @@ app.whenReady().then(() => {
   startWatcher();
   startHttpServer();
 
-  showNotification('Kitchen Flow V2.1.7', 'Conexão externa + Firewall auto + Anti-conflito • Pronto');
+  showNotification('Kitchen Flow V2.1.8', 'WebSocket + HTTP + Firewall auto • Pronto');
 });
 
 // ============================================================================
@@ -1486,6 +1575,9 @@ app.on('window-all-closed', () => { });
 app.on('before-quit', () => {
   isQuitting = true;
   if (watcher) watcher.stop();
+  if (wss) {
+    wss.close(() => log('INFO', '🔌 Servidor WebSocket fechado'));
+  }
   if (httpServer) {
     httpServer.close(() => log('INFO', '🔌 Servidor HTTP fechado'));
   }

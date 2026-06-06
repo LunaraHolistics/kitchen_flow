@@ -1,7 +1,7 @@
 /**
- * Kitchen Flow - Página do Garçom v1.3
+ * Kitchen Flow - Página do Garçom v1.4
  * Funcionalidades: PIN diário, PWA notifications, filtro salvo, polling, pull-to-refresh
- * Hotfix v1.3: Status robusto + cache busting + contador de falhas
+ * Hotfix v1.4: Timeout explícito + proteção DOM + feedback visual robusto
  */
 (() => {
   'use strict';
@@ -33,7 +33,6 @@
     // Se estiver em domínio público (Netlify/Vercel), usar IPs locais comuns
     if (hostname.includes('netlify') || hostname.includes('vercel') || !hostname.includes('localhost')) {
       console.log('🌐 Ambiente cloud detectado. Usando fallback de IPs locais.');
-      // Retorna o primeiro IP comum; fallback é tratado no fetchWithFallback
       return 'http://192.168.0.190:4545';
     }
     
@@ -45,7 +44,7 @@
   const POLL_INTERVAL = 30000; // 30 segundos
   const PRIORITY_KEYWORDS = ['kids', 'infantil', 'criança', 'batata', 'porção', 'tirinhas', 'salada', 'nugget'];
 
-  // ← NOVO: Configurações de PIN e Notificações
+  // Configurações de PIN e Notificações
   const PIN_STORAGE_KEY = 'kfm_waiter_pin';
   const PIN_DATE_KEY = 'kfm_waiter_pin_date';
   const FILTER_STORAGE_KEY = 'kfm_waiter_filter';
@@ -60,8 +59,9 @@
   let pullStartY = 0;
   let pinValidated = false;
   let notificationPermission = 'default';
-  let fetchFailCount = 0; // ← NOVO: Contador de falhas consecutivas
-  const MAX_FETCH_FAILS = 3; // ← NOVO: Máximo de falhas antes de marcar offline
+  let fetchFailCount = 0;
+  const MAX_FETCH_FAILS = 3;
+  let pollIntervalId = null; // ← NOVO: Controlar intervalo de polling
 
   // Seletores DOM
   const $ = (sel, context = document) => context.querySelector(sel);
@@ -73,7 +73,7 @@
     emptyState: $('#emptyState'),
     garcomSelect: $('#garcomSelect'),
     refreshBtn: $('#refreshBtn'),
-    configBtn: $('#configBtn'), // ← NOVO: Botão de configuração
+    configBtn: $('#configBtn'),
     connStatus: $('#connStatus'),
     lastUpdate: $('#lastUpdate'),
     ordersCount: $('#ordersCount'),
@@ -83,7 +83,7 @@
   };
 
   // ============================================================================
-  // ← NOVO: FETCH COM TIMEOUT E FALLBACK DE IPs
+  // FETCH ROBUSTO COM TIMEOUT E FALLBACK DE IPs
   // ============================================================================
 
   async function fetchWithFallback(url, options = {}) {
@@ -94,18 +94,19 @@
       API_BASE.replace('192.168.1.190', '192.168.0.100'),
       API_BASE.replace('192.168.0.100', '192.168.1.100'),
       API_BASE.replace('192.168.1.100', '10.0.0.100')
-    ].filter((v, i, a) => a.indexOf(v) === i); // Remover duplicatas
+    ].filter((v, i, a) => a.indexOf(v) === i);
     
     let lastError = null;
     
     for (const base of bases) {
-      const testUrl = url.replace(API_BASE, base);
+      const testUrl = url.toString().replace(API_BASE, base);
       
       try {
         console.debug(`🔌 Tentando: ${testUrl}`);
         
+        // Timeout explícito de 10 segundos
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 segundos
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
         
         const response = await fetch(testUrl, {
           ...options,
@@ -116,7 +117,6 @@
         clearTimeout(timeoutId);
         
         if (response.ok) {
-          // Salvar IP que funcionou para próximas requisições
           if (base !== API_BASE) {
             localStorage.setItem('kfm_api_base', base);
             console.log(`✅ API funcionando em: ${base}`);
@@ -129,11 +129,9 @@
       } catch (e) {
         lastError = e;
         console.debug(`❌ Falha em ${base}: ${e.name} - ${e.message}`);
-        // Continua para próximo IP
       }
     }
     
-    // Se chegou aqui, todos falharam
     throw lastError || new Error('Não foi possível conectar ao Bridge');
   }
 
@@ -430,7 +428,7 @@
   // ============================================================================
 
   function formatTime(minutes) {
-    if (minutes < 1) return '< 1min';
+    if (!minutes || minutes < 1) return '< 1min';
     if (minutes < 60) return `${minutes}min`;
     const h = Math.floor(minutes / 60);
     const m = minutes % 60;
@@ -452,6 +450,7 @@
   }
 
   function toast(message, type = 'info', duration = 3000) {
+    if (!els.toasts) return; // ← NOVO: Proteção contra elemento inexistente
     const t = document.createElement('div');
     t.className = `toast ${type}`;
     t.textContent = message;
@@ -505,9 +504,8 @@
     updateConnectionStatus('loading');
 
     try {
-      // ← NOVO: Cache busting obrigatório para evitar dados antigos
       const url = new URL(`${API_BASE}/api/waiter/orders`);
-      url.searchParams.set('_', Date.now()); // Evita cache do navegador
+      url.searchParams.set('_', Date.now()); // Cache busting
       if (currentGarcom) url.searchParams.set('garcom', currentGarcom);
 
       const response = await fetchWithFallback(url, { 
@@ -516,15 +514,19 @@
       });
       const data = await response.json();
 
+      // ← NOVO: Validar estrutura da resposta
+      if (!data || typeof data !== 'object') {
+        throw new Error('Resposta inválida do servidor');
+      }
+
       if (data.success) {
-        orders = data.orders;
+        orders = Array.isArray(data.orders) ? data.orders : [];
         lastUpdate = new Date();
         renderOrders();
         updateLastUpdate();
         
-        // 🔥 FORÇA STATUS ONLINE NO SUCESSO
         updateConnectionStatus('online');
-        fetchFailCount = 0; // ← NOVO: Reseta contador de falhas
+        fetchFailCount = 0;
 
         const newReady = orders.filter(o => o.status === 'concluido' && !o.notified && (!currentGarcom || o.garcom === currentGarcom));
         if (newReady.length > 0) {
@@ -535,9 +537,8 @@
       }
     } catch (e) {
       console.error('❌ Erro fetchOrders:', e.message);
-      fetchFailCount++; // ← NOVO: Incrementa contador
+      fetchFailCount++;
       
-      // ← NOVO: Só muda para offline se falhar 3x seguidas
       if (fetchFailCount >= MAX_FETCH_FAILS) {
         updateConnectionStatus('offline');
         toast('⚠️ Conexão instável. Verifique o PC do caixa.', 'warning', 5000);
@@ -553,7 +554,7 @@
       }
     } finally {
       isRefreshing = false;
-      els.loading.classList.add('hidden');
+      if (els.loading) els.loading.classList.add('hidden');
     }
   }
 
@@ -562,6 +563,8 @@
   // ============================================================================
 
   function renderOrders() {
+    if (!els.ordersList) return; // ← NOVO: Proteção
+    
     cacheOrders(orders);
     let filtered = orders;
 
@@ -575,13 +578,13 @@
       }
     }
 
-    els.ordersCount.textContent = `${filtered.length} pedido(s)`;
+    if (els.ordersCount) els.ordersCount.textContent = `${filtered.length} pedido(s)`;
     if (filtered.length === 0) {
       els.ordersList.innerHTML = '';
-      els.emptyState.classList.remove('hidden');
+      if (els.emptyState) els.emptyState.classList.remove('hidden');
       return;
     }
-    els.emptyState.classList.add('hidden');
+    if (els.emptyState) els.emptyState.classList.add('hidden');
 
     filtered.sort((a, b) => {
       const aPri = isPriorityOrder(a) ? 0 : 1;
@@ -598,7 +601,7 @@
         <article class="order-card ${hasPriority ? 'priority' : ''} ${statusCfg.class}" data-order-id="${order.id}" role="listitem">
           ${hasPriority ? `<div class="priority-badge">👶 Kids/Porção</div>` : ''}
           <header class="order-header">
-            <div class="order-mesa">${order.mesa}</div>
+            <div class="order-mesa">${order.mesa || 'Mesa'}</div>
             <div class="order-status ${statusCfg.class}">
               <span class="status-icon">${statusCfg.icon}</span>
               <span class="status-label">${statusCfg.label}</span>
@@ -611,7 +614,7 @@
           <ul class="order-items">
             ${order.itens?.slice(0, 3).map(item => `
               <li class="order-item ${item.priority ? 'priority-item' : ''}">
-                <span class="item-name">${item.item}</span>
+                <span class="item-name">${item.item || 'Item'}</span>
                 <span class="item-qty">x${item.quantidade || 1}</span>
                 ${item.priority ? '<span class="item-priority">👶</span>' : ''}
               </li>
@@ -624,10 +627,14 @@
   }
 
   function updateLastUpdate() {
-    if (lastUpdate) els.lastUpdate.textContent = lastUpdate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    if (lastUpdate && els.lastUpdate) {
+      els.lastUpdate.textContent = lastUpdate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    }
   }
 
   function updateConnectionStatus(status) {
+    if (!els.connStatus) return; // ← NOVO: Proteção
+    
     const dot = els.connStatus.querySelector('.status-dot');
     const text = els.connStatus.querySelector('.status-text');
     if (dot) dot.className = `status-dot ${status}`;
@@ -640,32 +647,38 @@
   // ============================================================================
 
   function setupEventListeners() {
-    els.refreshBtn.addEventListener('click', () => { 
-      els.loading.classList.remove('hidden'); 
-      fetchOrders(); 
-    });
+    if (els.refreshBtn) {
+      els.refreshBtn.addEventListener('click', () => { 
+        if (els.loading) els.loading.classList.remove('hidden'); 
+        fetchOrders(); 
+      });
+    }
     
-    // ← NOVO: Botão de configuração de API
-    els.configBtn?.addEventListener('click', () => {
-      const current = localStorage.getItem('kfm_api_base') || API_BASE;
-      const newApi = prompt('URL do Bridge (ex: http://192.168.0.190:4545):', current);
-      if (newApi && newApi.startsWith('http')) {
-        localStorage.setItem('kfm_api_base', newApi);
-        toast('✅ Configuração salva! Recarregando...', 'success', 2000);
-        setTimeout(() => location.reload(), 500);
-      } else if (newApi !== null) {
-        toast('❌ URL inválida. Deve começar com http://', 'error');
-      }
-    });
+    if (els.configBtn) {
+      els.configBtn.addEventListener('click', () => {
+        const current = localStorage.getItem('kfm_api_base') || API_BASE;
+        const newApi = prompt('URL do Bridge (ex: http://192.168.0.190:4545):', current);
+        if (newApi && newApi.startsWith('http')) {
+          localStorage.setItem('kfm_api_base', newApi);
+          toast('✅ Configuração salva! Recarregando...', 'success', 2000);
+          setTimeout(() => location.reload(), 500);
+        } else if (newApi !== null) {
+          toast('❌ URL inválida. Deve começar com http://', 'error');
+        }
+      });
+    }
 
-    els.garcomSelect.addEventListener('change', (e) => {
-      currentGarcom = e.target.value;
-      const url = new URL(window.location);
-      if (currentGarcom) url.searchParams.set('garcom', currentGarcom); else url.searchParams.delete('garcom');
-      window.history.replaceState({}, '', url);
-      saveFilterPreferences();
-      els.loading.classList.remove('hidden'); fetchOrders();
-    });
+    if (els.garcomSelect) {
+      els.garcomSelect.addEventListener('change', (e) => {
+        currentGarcom = e.target.value;
+        const url = new URL(window.location);
+        if (currentGarcom) url.searchParams.set('garcom', currentGarcom); else url.searchParams.delete('garcom');
+        window.history.replaceState({}, '', url);
+        saveFilterPreferences();
+        if (els.loading) els.loading.classList.remove('hidden');
+        fetchOrders();
+      });
+    }
 
     els.filterBtns.forEach(btn => {
       btn.addEventListener('click', () => {
@@ -686,17 +699,19 @@
       if (pullStartY && window.scrollY === 0 && !isRefreshing) {
         const currentY = e.touches[0].clientY;
         pullDistance = Math.max(0, currentY - pullStartY);
-        if (pullDistance > PULL_THRESHOLD / 2) {
+        if (pullDistance > PULL_THRESHOLD / 2 && els.pullIndicator) {
           els.pullIndicator.classList.remove('hidden');
           els.pullIndicator.querySelector('.pull-icon').textContent = '👍';
           els.pullIndicator.querySelector('.pull-text').textContent = 'Solte para atualizar';
-        } else els.pullIndicator.classList.add('hidden');
+        } else if (els.pullIndicator) {
+          els.pullIndicator.classList.add('hidden');
+        }
       }
     }, { passive: true });
     document.addEventListener('touchend', () => {
       if (pullDistance > PULL_THRESHOLD && !isRefreshing) {
-        els.pullIndicator.classList.add('hidden');
-        els.loading.classList.remove('hidden');
+        if (els.pullIndicator) els.pullIndicator.classList.add('hidden');
+        if (els.loading) els.loading.classList.remove('hidden');
         fetchOrders();
       }
       pullStartY = 0; pullDistance = 0;
@@ -704,7 +719,7 @@
 
     window.addEventListener('online', () => { 
       updateConnectionStatus('online'); 
-      fetchFailCount = 0; // ← NOVO: Reseta contador ao reconectar
+      fetchFailCount = 0;
       toast('🟢 Conexão restaurada', 'success', 2000); 
       fetchOrders(); 
     });
@@ -730,7 +745,7 @@
   // ============================================================================
 
   async function init() {
-    console.log('🚀 Iniciando Kitchen Flow Garçom v1.3...');
+    console.log('🚀 Iniciando Kitchen Flow Garçom v1.4...');
     setupEventListeners();
     updateConnectionStatus(navigator.onLine ? 'online' : 'offline');
 
@@ -742,9 +757,12 @@
     await fetchWaitersList();
     await fetchOrders();
 
-    if (notificationPermission === 'default') { /* Aguardar interação */ }
-
-    setInterval(() => { if (!document.hidden && navigator.onLine && pinValidated) fetchOrders(); }, POLL_INTERVAL);
+    // Polling automático
+    pollIntervalId = setInterval(() => { 
+      if (!document.hidden && navigator.onLine && pinValidated) fetchOrders(); 
+    }, POLL_INTERVAL);
+    
+    // Verificação de expiração do PIN
     setInterval(() => {
       if (!isPinValidForToday(getSavedPin(), localStorage.getItem(PIN_DATE_KEY))) {
         console.log('🔒 PIN expirado'); clearPin(); pinValidated = false;
@@ -758,10 +776,18 @@
         .catch(err => console.warn('⚠️ [PWA] SW registration failed:', err));
     }
 
-    console.log('✅ Kitchen Flow Garçom v1.3 inicializado');
+    console.log('✅ Kitchen Flow Garçom v1.4 inicializado');
     console.log('🔗 API Base:', API_BASE);
     console.log('🔐 PIN:', pinValidated ? 'válido' : 'inválido');
   }
+
+  // ← NOVO: Limpeza ao fechar a página
+  window.addEventListener('beforeunload', () => {
+    if (pollIntervalId) {
+      clearInterval(pollIntervalId);
+      pollIntervalId = null;
+    }
+  });
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
