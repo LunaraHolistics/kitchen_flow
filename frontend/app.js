@@ -1069,45 +1069,65 @@
   }
 
   // ============================================================================
-  // ← NOVO: Ações por Item
+  // ← NOVO: Ações por Item - CORRIGIDO: function tradicional em vez de arrow
   // ============================================================================
 
-  window.startItem = (orderId, itemIndex) => {
-    const order = orders.find(o => o.id === orderId);
-    if (!order?.itens?.[itemIndex]) return;
-    const item = order.itens[itemIndex];
-    const agora = getServerTime().toISOString();
+  window.startItem = function(orderId, itemIndex) {
+    var order = orders.find(function(o) { return o.id === orderId; });
+    if (!order || !order.itens || !order.itens[itemIndex]) return;
+    
+    var item = order.itens[itemIndex];
+    var agora = getServerTime().toISOString();
+    
     item.status = 'em-preparo';
     item.startedAt = agora;
-    renderAll(); startTimers();
-    toast(`▶ ${item.item} em produção`, 'success', 1500);
+    
+    renderAll();
+    startTimers();
+    toast('▶ ' + item.item + ' em produção', 'success', 1500);
+    
     send('UPDATE_ITEM_STATUS', {
-      orderId, itemId: getItemId(orderId, item.setor, itemIndex),
-      status: 'em-preparo', startedAt: agora, timestamp: agora
+      orderId: orderId,
+      itemId: getItemId(orderId, item.setor, itemIndex),
+      status: 'em-preparo',
+      startedAt: agora,
+      timestamp: agora
     });
   };
 
-  window.completeItem = (orderId, itemIndex) => {
-    const order = orders.find(o => o.id === orderId);
-    if (!order?.itens?.[itemIndex]) return;
-    const item = order.itens[itemIndex];
-    const agora = getServerTime().toISOString();
-    const started = item.startedAt ? new Date(item.startedAt).getTime() : Date.now();
-    const prepTime = Math.floor((Date.now() - started) / 1000);
+  window.completeItem = function(orderId, itemIndex) {
+    var order = orders.find(function(o) { return o.id === orderId; });
+    if (!order || !order.itens || !order.itens[itemIndex]) return;
+    
+    var item = order.itens[itemIndex];
+    var agora = getServerTime().toISOString();
+    var started = item.startedAt ? new Date(item.startedAt).getTime() : Date.now();
+    var prepTime = Math.floor((Date.now() - started) / 1000);
+    
     item.status = 'concluido';
     item.completedAt = agora;
     item.prepTime = prepTime;
+    
     renderAll();
-    toast(`✅ ${item.item} pronto! (${formatTime(prepTime)})`, 'success', 1500);
+    toast('✅ ' + item.item + ' pronto! (' + formatTime(prepTime) + ')', 'success', 1500);
+    
     send('UPDATE_ITEM_STATUS', {
-      orderId, itemId: getItemId(orderId, item.setor, itemIndex),
-      status: 'concluido', completedAt: agora, prepTime, timestamp: agora
+      orderId: orderId,
+      itemId: getItemId(orderId, item.setor, itemIndex),
+      status: 'concluido',
+      completedAt: agora,
+      prepTime: prepTime,
+      timestamp: agora
     });
-    const allDone = order.itens.every(i => i.status === 'concluido' || i.setor === 'Bebidas');
+    
+    var allDone = order.itens.every(function(i) {
+      return i.status === 'concluido' || i.setor === 'Bebidas';
+    });
+    
     if (allDone && order.status !== 'concluido') {
       order.status = 'concluido';
       order.updatedAt = agora;
-      send('UPDATE_STATUS', { orderId, status: 'concluido', concludedAt: agora });
+      send('UPDATE_STATUS', { orderId: orderId, status: 'concluido', concludedAt: agora });
     }
   };
 

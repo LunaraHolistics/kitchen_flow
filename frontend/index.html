@@ -12,7 +12,7 @@
   <meta name="theme-color" content="#1a1a2e">
   <meta name="application-name" content="Kitchen Flow">
   
-  <!-- ← NOVO: Fullscreen emergencial para Chrome -->
+  <!-- Fullscreen emergencial para Chrome -->
   <meta name="fullscreen" content="true">
   <meta name="x5-fullscreen" content="true">
   
@@ -27,11 +27,33 @@
   <!-- Manifest para PWA -->
   <link rel="manifest" href="manifest.json">
   
-  <!-- ← NOVO: Script para fullscreen emergencial -->
+  <!-- Service Worker e Fullscreen - CORRIGIDO: Só executa após DOM load -->
   <script>
-    // Tentar entrar em fullscreen se não for PWA instalado
+    // Prevenir zoom acidental em tablets
+    document.addEventListener('touchstart', (e) => {
+      if (e.touches.length > 1) e.preventDefault();
+    }, { passive: false });
+    
+    // Prevenir scroll bounce em iOS
+    document.addEventListener('touchmove', (e) => {
+      const scrollable = e.target.closest('.orders-grid, .sectors-wrap, .completed-list');
+      if (scrollable) {
+        e.stopPropagation();
+      }
+    }, { passive: false });
+    
+    // Registrar service worker para offline cache
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(err => {
+          console.log('SW registration failed:', err);
+        });
+      });
+    }
+    
+    // Fullscreen apenas por gesto do usuário (exposto globalmente)
     function tryFullscreen() {
-      if (window.matchMedia('(display-mode: standalone)').matches) return; // Já é PWA
+      if (window.matchMedia('(display-mode: standalone)').matches) return;
       if (document.fullscreenElement) return;
       
       const elem = document.documentElement;
@@ -40,28 +62,8 @@
       else if (elem.msRequestFullscreen) elem.msRequestFullscreen().catch(() => {});
     }
     
-    // Registrar service worker para offline cache
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').catch(err => {
-          console.log('SW registration failed:', err);
-        });
-        // Tentar fullscreen após load
-        setTimeout(tryFullscreen, 2000);
-      });
-    }
-    
-    // Prevenir zoom acidental em tablets
-    document.addEventListener('touchstart', (e) => {
-      if (e.touches.length > 1) e.preventDefault();
-    }, { passive: false });
-    
-    // Prevenir scroll bounce em iOS
-    document.body.addEventListener('touchmove', (e) => {
-      if (e.target.closest('.orders-grid, .sectors-wrap, .completed-list')) {
-        e.stopPropagation();
-      }
-    }, { passive: false });
+    // Expor globalmente para ser chamado por clique
+    window.tryFullscreen = tryFullscreen;
   </script>
 </head>
 
@@ -73,7 +75,7 @@
     <small id="loadingStatus">Aguardando rede...</small>
   </div>
 
-  <!-- ← NOVO: Banner de Cancelamento (fixo no topo, oculto por padrão) -->
+  <!-- Banner de Cancelamento (fixo no topo, oculto por padrão) -->
   <div id="cancelBanner" class="cancel-banner hidden" role="alert" aria-live="assertive">
     <div class="cancel-banner-content">
       <span class="cancel-icon">🚫</span>
@@ -134,7 +136,6 @@
     <section id="tab-concluidos" class="tab-content" role="tabpanel" aria-labelledby="tab-concluidos-btn" hidden>
       <div id="completed" class="completed-list" aria-live="polite">
         <div class="empty">
-          <!-- ← CORREÇÃO: class="-icon" → class="empty-icon" -->
           <span class="empty-icon" aria-hidden="true">✨</span>
           <p>Nenhum concluído</p>
           <small>Pedidos finalizados aparecem aqui</small>
@@ -175,19 +176,12 @@
     <small class="config-note">Alterações exigem recarregar a página</small>
   </div>
   
-  <!-- ← NOVO: Engrenagem mais discreta (classe atualizada) -->
+  <!-- Engrenagem mais discreta -->
   <button id="openConfig" class="config-toggle config-toggle-discreet" aria-label="Abrir configurações" title="Configurações">
     ⚙️
   </button>
 
-  <!-- Hidden audio elements for notifications -->
-  <audio id="soundNew" preload="auto">
-    <source src="sounds/new-order.mp3" type="audio/mpeg">
-  </audio>
-  <audio id="soundDone" preload="auto">
-    <source src="sounds/order-done.mp3" type="audio/mpeg">
-  </audio>
-  <!-- ← REMOVIDO: soundCancel não é mais necessário (usamos Web Audio API puro no app.js) -->
+  <!-- Sons gerados via Web Audio API no app.js (sem arquivos mp3) -->
 
   <!-- App Script -->
   <script src="app.js"></script>
