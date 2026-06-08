@@ -1,9 +1,9 @@
 /**
- * Kitchen Flow Monitor - Frontend Tablet v2.1.8-hotfix
+ * Kitchen Flow Monitor - Frontend Tablet v2.1.9
  * Deploy: https://cozinha-master.netlify.app
  * Backend: Configurável (local ou cloud)
  * Features: Prioridade Kids/Porção, observações em destaque, cache offline, controle por item, PWA reforçado
- * Hotfix: WebSocket + HTTP Polling automático + Fallbacks robustos + Emoji fix
+ * Hotfix: WebSocket + HTTP Polling automático + Fallbacks robustos + Delivery fix + iOS compat
  */
 (() => {
   'use strict';
@@ -50,12 +50,12 @@
   const TIMER_WARN_THRESHOLD = 300;
   const TIMER_CRITICAL_THRESHOLD = 600;
 
-  console.log('Kitchen Flow v2.1.8-hotfix');
+  console.log('Kitchen Flow v2.1.9');
   console.log('Frontend URL:', window.location.href);
   console.log('Backend:', BACKEND_URL);
   console.log('WebSocket:', WS_URL);
 
-  const SECTORS = ['Frios', 'Saladas', 'Fritadeira', 'Entradas', 'Fogão', 'Sobremesas'];
+  const SECTORS = ['Frios', 'Saladas', 'Fritadeira', 'Entradas', 'Fogao', 'Sobremesas'];
   const PRIORITY_KEYWORDS = [
     'kids', 'infantil', 'crianca', 'batata', 'porcao', 'tirinhas', 'salada', 
     'entrada', 'frango', 'nugget', 'mini', 'pequeno'
@@ -80,6 +80,12 @@
   let httpPollingInterval = null;
   let connectionRetryTimeout = null;
   let cancelAlert = null;
+
+  // ← NOVO: Detectar iOS para ajustes de compatibilidade
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  if (isIOS) {
+    console.log('iOS detectado - aplicando ajustes de compatibilidade');
+  }
 
   // ============================================================================
   // SELETORES DOM
@@ -173,6 +179,23 @@
     return orderId + '_' + setor + '_' + index;
   }
 
+  // ← NOVO: Formatar nome da mesa para delivery
+  function formatMesaDisplay(order) {
+    var mesa = order.mesa || 'Mesa';
+    
+    // Detectar delivery por tipo ou por nome
+    if (order.tipo === 'delivery' || order.tipo === 'ifood' || order.isDelivery) {
+      return '🚚 Entrega';
+    }
+    
+    // Corrigir nomes inválidos
+    if (mesa === 'Unknown' || mesa === 'Desconhecida' || !mesa) {
+      return '📦 Pedido';
+    }
+    
+    return mesa;
+  }
+
   // ============================================================================
   // CACHE OFFLINE
   // ============================================================================
@@ -218,18 +241,25 @@
   // ============================================================================
 
   function syncTimeWithServer() {
-    fetch(BACKEND_URL + '/api/time', { 
-      method: 'GET', cache: 'no-cache'
+    // ← MELHORADO: Timeout mais curto para iOS
+    var timeout = isIOS ? 2000 : 3000;
+    
+    fetch(BACKEND_URL + '/api/time?_=' + Date.now(), { 
+      method: 'GET', 
+      cache: 'no-cache',
+      headers: { 'Accept': 'application/json' }
     }).then(function(response) {
       if (response.ok) return response.json();
       throw new Error('HTTP ' + response.status);
     }).then(function(data) {
-      const now = Date.now();
-      const serverTime = new Date(data.timestamp).getTime();
-      const roundTripTime = now - (serverTime - now);
+      var now = Date.now();
+      var serverTime = new Date(data.timestamp).getTime();
+      var roundTripTime = now - (serverTime - now);
       serverTimeOffset = serverTime - (now + roundTripTime / 2);
       lastTimeSync = Date.now();
-    }).catch(function() {
+    }).catch(function(e) {
+      // Silencioso para iOS - não poluir console
+      if (!isIOS) console.warn('Falha ao sincronizar horario:', e.message);
       serverTimeOffset = 0;
     });
   }
@@ -238,7 +268,9 @@
     return new Date(Date.now() + serverTimeOffset);
   }
 
-  setInterval(function() { if (isInitialized) syncTimeWithServer(); }, 5 * 60 * 1000);
+  // ← MELHORADO: Intervalo maior para iOS para economizar bateria
+  var syncInterval = isIOS ? 10 * 60 * 1000 : 5 * 60 * 1000;
+  setInterval(function() { if (isInitialized) syncTimeWithServer(); }, syncInterval);
   syncTimeWithServer();
 
   // ============================================================================
@@ -431,12 +463,14 @@
     }
     
     let wsConnected = false;
+    // ← MELHORADO: Timeout menor para iOS
+    const wsTimeoutMs = isIOS ? 2000 : 3000;
     const wsTimeout = setTimeout(function() {
       if (!wsConnected) {
         console.warn('WebSocket timeout. Alternando para HTTP Polling...');
         startHttpPolling();
       }
-    }, 3000);
+    }, wsTimeoutMs);
 
     try {
       ws = new WebSocket(WS_URL);
@@ -503,12 +537,18 @@
     fetchOrdersHttp();
     
     if (httpPollingInterval) clearInterval(httpPollingInterval);
-    httpPollingInterval = setInterval(fetchOrdersHttp, 3000);
+    // ← MELHORADO: Intervalo menor para iOS para melhor responsividade
+    var pollInterval = isIOS ? 2000 : 3000;
+    httpPollingInterval = setInterval(fetchOrdersHttp, pollInterval);
   }
 
   function fetchOrdersHttp() {
-    fetch(BACKEND_URL + '/api/orders?_=' + Date.now(), { 
-      cache: 'no-cache'
+    // ← MELHORADO: Cache busting mais agressivo para iOS
+    var url = BACKEND_URL + '/api/orders?_=' + Date.now() + '&_=' + Math.random();
+    
+    fetch(url, { 
+      cache: 'no-cache',
+      headers: { 'Accept': 'application/json' }
     }).then(function(res) {
       if (!res.ok) throw new Error('HTTP ' + res.status);
       return res.json();
@@ -528,7 +568,8 @@
         
         if (newOrders.length > 0) {
           newOrders.forEach(function(order) {
-            toast('Novo pedido: ' + order.mesa, 'info', 3000);
+            var mesaDisplay = formatMesaDisplay(order);
+            toast('Novo pedido: ' + mesaDisplay, 'info', 3000);
             playDing();
           });
         }
@@ -617,7 +658,8 @@
           orders.unshift(data.order); 
           cacheOrders(orders);
           renderAll();
-          toast('Novo pedido: ' + (data.order && data.order.mesa), 'info', 3000); 
+          var mesaDisplay = data.order ? formatMesaDisplay(data.order) : 'Novo pedido';
+          toast('Novo pedido: ' + mesaDisplay, 'info', 3000); 
           playDing();
         } 
         break;
@@ -709,7 +751,7 @@
   }
 
   // ============================================================================
-  // RENDER: Aba GERAL - CORRIGIDO: emoji simplificado
+  // RENDER: Aba GERAL - CORRIGIDO: delivery e emojis compatíveis
   // ============================================================================
 
   function renderGeral() {
@@ -746,13 +788,16 @@
     var html = '';
     for (var i = 0; i < ativos.length; i++) {
       var order = ativos[i];
-      var isDelivery = order.tipo === 'delivery';
+      var isDelivery = order.tipo === 'delivery' || order.tipo === 'ifood' || order.isDelivery;
       var isInPrep = order.status === 'em-preparo';
       var isCancelled = order.status === 'cancelled';
       var hasPriority = isPriorityOrder(order);
       var startedAt = order.startedAt ? new Date(order.startedAt) : null;
       var elapsed = startedAt ? Math.floor((Date.now() - startedAt.getTime()) / 1000) : 0;
       var timeClass = getTimeClass(elapsed);
+
+      // ← CORREÇÃO: Usar função formatMesaDisplay para delivery
+      var mesaDisplay = formatMesaDisplay(order);
 
       html += '<article class="order-card ' + 
         (isDelivery ? 'delivery ' : '') + 
@@ -765,10 +810,9 @@
       if (hasPriority) html += '<div class="priority-banner">PRIORIDADE: Kids/Porcao</div>';
       
       html += '<header class="order-header"><div>';
-      html += '<div class="order-mesa" id="order-title-' + order.id + '">' + escapeHtml(order.mesa) + '</div>';
+      html += '<div class="order-mesa" id="order-title-' + order.id + '">' + escapeHtml(mesaDisplay) + '</div>';
       html += '<span class="order-type ' + order.tipo + '" role="label">' + order.tipo.toUpperCase() + '</span>';
       
-      // ← CORREÇÃO: emoji simplificado para evitar erro de parsing
       if (order.garcom && order.garcom !== 'Desconhecido') {
         html += '<div class="order-garcom" title="Garcom responsavel">Chef ' + escapeHtml(order.garcom) + '</div>';
       }
@@ -827,12 +871,12 @@
       
       html += '<footer class="order-actions" role="group" aria-label="Acoes do pedido">';
       if (!isCancelled && !isInPrep) {
-        html += '<button class="btn btn-primary" onclick="window.startOrder(' + order.id + ')" aria-label="Iniciar preparo de ' + order.mesa + '">▶ Iniciar</button>';
-        html += '<button class="btn btn-secondary" onclick="window.markReady(' + order.id + ')" aria-label="Marcar ' + order.mesa + ' como pronto">✅ Pronto</button>';
+        html += '<button class="btn btn-primary" onclick="window.startOrder(' + order.id + ')" aria-label="Iniciar preparo de ' + mesaDisplay + '">▶ Iniciar</button>';
+        html += '<button class="btn btn-secondary" onclick="window.markReady(' + order.id + ')" aria-label="Marcar ' + mesaDisplay + ' como pronto">✅ Pronto</button>';
       } else if (isCancelled) {
         html += '<button class="btn btn-danger" disabled>Cancelado</button>';
       } else {
-        html += '<button class="btn btn-secondary" onclick="window.markReady(' + order.id + ')" aria-label="Marcar ' + order.mesa + ' como pronto">✅ Pronto</button>';
+        html += '<button class="btn btn-secondary" onclick="window.markReady(' + order.id + ')" aria-label="Marcar ' + mesaDisplay + ' como pronto">✅ Pronto</button>';
       }
       html += '</footer></article>';
     }
@@ -840,7 +884,7 @@
   }
 
   // ============================================================================
-  // RENDER: Aba SETOR
+  // RENDER: Aba SETOR - CORRIGIDO: delivery
   // ============================================================================
 
   function renderSetor() {
@@ -867,10 +911,14 @@
           sectorItem.total += item.quantidade || 1;
           if (isPriorityOrder(order)) sectorItem.hasPriority = true;
           sectorItem.tables.push({
-            mesa: order.mesa, tipo: order.tipo, qty: item.quantidade || 1,
-            orderId: order.id, status: item.status || order.status,
+            mesa: formatMesaDisplay(order), // ← CORREÇÃO: usar formatMesaDisplay
+            tipo: order.tipo, 
+            qty: item.quantidade || 1,
+            orderId: order.id, 
+            status: item.status || order.status,
             startedAt: item.startedAt || order.startedAt,
-            itemId: item.id, itemIndex: order.itens.indexOf(item),
+            itemId: item.id, 
+            itemIndex: order.itens.indexOf(item),
             garcom: order.garcom,
             observacoes: order.observacoes
           });
@@ -920,7 +968,7 @@
         
         for (var ti = 0; ti < data.tables.length; ti++) {
           var t = data.tables[ti];
-          var itemTagTitle = ['Mesa ' + t.mesa];
+          var itemTagTitle = [t.mesa]; // ← Já formatado por formatMesaDisplay
           if (t.garcom) itemTagTitle.push('Garcom: ' + t.garcom);
           if (t.observacoes) itemTagTitle.push('OBS: ' + t.observacoes.toUpperCase());
           
@@ -952,7 +1000,7 @@
   }
 
   // ============================================================================
-  // RENDER: Aba CONCLUÍDOS
+  // RENDER: Aba CONCLUÍDOS - CORRIGIDO: delivery
   // ============================================================================
 
   function renderConcluidos() {
@@ -985,9 +1033,12 @@
       var avgItemTime = itemTimes.length > 0 ? Math.round(itemTimes.reduce(function(a,b) { return a+b; }, 0) / itemTimes.length) : null;
       var slowestItem = itemTimes.length > 0 ? Math.max.apply(null, itemTimes) : null;
 
+      // ← CORREÇÃO: Usar formatMesaDisplay
+      var mesaDisplay = formatMesaDisplay(o);
+
       html += '<article class="completed-item" data-order-id="' + o.id + '">';
       html += '<div class="completed-header" onclick="window.toggleCompletedDetails(\'' + o.id + '\')" style="cursor:pointer">';
-      html += '<div class="info"><span class="mesa">' + escapeHtml(o.mesa) + ' <span class="order-type ' + o.tipo + '" style="padding:2px 8px;font-size:0.75rem">' + o.tipo + '</span></span>';
+      html += '<div class="info"><span class="mesa">' + escapeHtml(mesaDisplay) + ' <span class="order-type ' + o.tipo + '" style="padding:2px 8px;font-size:0.75rem">' + o.tipo + '</span></span>';
       if (o.garcom && o.garcom !== 'Desconhecido') {
         html += '<span class="garcom-small" title="Garcom">Chef ' + escapeHtml(o.garcom) + '</span>';
       }
@@ -1020,7 +1071,7 @@
       if (slowestItem != null && slowestItem > 600) {
         html += '<div class="alert-slow">⚠️ Item mais lento: ' + formatTime(slowestItem) + ' (acima de 10min)</div>';
       }
-      html += '</div><button class="btn btn-danger" style="padding:10px 20px" onclick="window.removeCompleted(' + o.id + ')" aria-label="Remover ' + o.mesa + ' do historico">🗑️</button></article>';
+      html += '</div><button class="btn btn-danger" style="padding:10px 20px" onclick="window.removeCompleted(' + o.id + ')" aria-label="Remover ' + mesaDisplay + ' do historico">🗑️</button></article>';
     }
     els.completedList.innerHTML = html;
   }
@@ -1224,12 +1275,13 @@
       return; 
     }
     var agora = getServerTime().toISOString();
-    console.log('▶ Iniciando pedido ' + order.mesa + ' (ID: ' + id + ') as ' + agora);
+    var mesaDisplay = formatMesaDisplay(order); // ← CORREÇÃO
+    console.log('▶ Iniciando pedido ' + mesaDisplay + ' (ID: ' + id + ') as ' + agora);
     order.status = 'em-preparo'; 
     order.startedAt = agora;
     renderAll(); 
     startTimers();
-    toast('▶ ' + order.mesa + ' em producao', 'success', 2000);
+    toast('▶ ' + mesaDisplay + ' em producao', 'success', 2000);
     var payload = { orderId: id, status: 'em-preparo', startedAt: agora, timestamp: agora };
     console.log('Enviando UPDATE_STATUS:', payload);
     if (send('UPDATE_STATUS', payload)) {
@@ -1254,14 +1306,15 @@
       console.error('Pedido nao encontrado:', id); 
       return; 
     }
-    showModal('Confirmar: concluir ' + order.mesa + '?', function() {
+    var mesaDisplay = formatMesaDisplay(order); // ← CORREÇÃO
+    showModal('Confirmar: concluir ' + mesaDisplay + '?', function() {
       var agora = getServerTime().toISOString();
-      console.log('✅ Concluindo pedido ' + order.mesa + ' (ID: ' + id + ') as ' + agora);
+      console.log('✅ Concluindo pedido ' + mesaDisplay + ' (ID: ' + id + ') as ' + agora);
       order.status = 'concluido'; 
       order.concludedAt = agora; 
       order.updatedAt = agora;
       renderAll(); 
-      toast('✅ ' + order.mesa + ' concluido!', 'success', 2000);
+      toast('✅ ' + mesaDisplay + ' concluido!', 'success', 2000);
       if (send('UPDATE_STATUS', { orderId: id, status: 'concluido', concludedAt: agora, timestamp: agora })) {
         setTimeout(function() { send('REQUEST_SYNC', { orderId: id }); }, 500);
       }
@@ -1328,7 +1381,8 @@
       console.error('Pedido nao encontrado:', id); 
       return; 
     }
-    showModal('Remover ' + order.mesa + ' do historico?', function() {
+    var mesaDisplay = formatMesaDisplay(order); // ← CORREÇÃO
+    showModal('Remover ' + mesaDisplay + ' do historico?', function() {
       if (send('DELETE_ORDER', { orderId: id })) toast('Removido', 'info', 1500);
     });
   };
@@ -1363,6 +1417,7 @@
       els.soundToggle.setAttribute('aria-pressed', soundEnabled);
       els.soundToggle.addEventListener('click', toggleSound);
     }
+    // ← MELHORADO: Inicializar AudioContext no primeiro toque (iOS)
     document.addEventListener('touchstart', function() {
       try {
         var AudioCtx = window.AudioContext || window.webkitAudioContext;
@@ -1391,7 +1446,7 @@
   // ============================================================================
 
   function init() {
-    console.log('Inicializando Kitchen Flow v2.1.8-hotfix...');
+    console.log('Inicializando Kitchen Flow v2.1.9...');
     startClock(); 
     setupTabs(); 
     setupConfigPanel(); 
@@ -1423,7 +1478,8 @@
       syncTimeWithServer: syncTimeWithServer, 
       getServerTime: getServerTime, 
       tryFullscreen: tryFullscreen, 
-      clearCache: clearCache 
+      clearCache: clearCache,
+      formatMesaDisplay: formatMesaDisplay // ← NOVO: Expor para debug
     };
     console.log('Kitchen Flow inicializado');
     console.log('Comandos disponiveis: window.KFM');
