@@ -2,8 +2,14 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Kitchen Flow TV v1.2 - Painel de Pedidos</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Kitchen Flow TV v1.3 - Painel de Pedidos</title>
+  
+  <!-- ← NOVO: Meta tags para iOS -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  
   <style>
     :root {
       --bg: #0f172a;
@@ -29,7 +35,6 @@
       flex-direction: column;
     }
 
-    /* Header */
     header {
       display: flex;
       justify-content: space-between;
@@ -51,7 +56,6 @@
       margin-top: 4px;
     }
 
-    /* Board Layout */
     .board {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -84,7 +88,6 @@
     .col-prep .column-header { background: var(--warn); color: #000; }
     .col-ready .column-header { background: var(--success); color: #000; }
 
-    /* Cards */
     .card {
       background: var(--card-bg);
       border-radius: 12px;
@@ -144,7 +147,6 @@
 
     .badge.kids { background: #a855f7; color: white; }
 
-    /* Empty State */
     .empty-state {
       text-align: center;
       color: var(--muted);
@@ -153,7 +155,6 @@
       font-style: italic;
     }
 
-    /* Animations */
     @keyframes slideIn {
       from { opacity: 0; transform: translateY(20px); }
       to { opacity: 1; transform: translateY(0); }
@@ -164,12 +165,10 @@
       to { box-shadow: 0 0 20px 10px rgba(34, 197, 94, 0.8); transform: scale(1.02); }
     }
 
-    /* Scrollbar */
     ::-webkit-scrollbar { width: 8px; }
     ::-webkit-scrollbar-track { background: var(--bg); }
     ::-webkit-scrollbar-thumb { background: var(--card-bg); border-radius: 4px; }
 
-    /* Config Modal */
     #config-modal {
       position: fixed; top: 0; left: 0; width: 100%; height: 100%;
       background: rgba(0,0,0,0.9); display: none; align-items: center; justify-content: center;
@@ -207,7 +206,6 @@
       line-height: 1.5;
     }
     
-    /* ← NOVO: Toast notifications */
     .toast {
       position: fixed;
       bottom: 20px;
@@ -228,7 +226,6 @@
 </head>
 <body>
 
-  <!-- Configuração Inicial -->
   <div id="config-modal">
     <div class="config-box">
       <h2>📺 Configurar TV Display</h2>
@@ -254,7 +251,6 @@
   </header>
 
   <div class="board">
-    <!-- Coluna Em Produção -->
     <div class="column col-prep">
       <div class="column-header">🔥 Em Produção</div>
       <div id="prep-list">
@@ -262,7 +258,6 @@
       </div>
     </div>
 
-    <!-- Coluna Prontos -->
     <div class="column col-ready">
       <div class="column-header">✅ Prontos para Retirada</div>
       <div id="ready-list">
@@ -271,33 +266,64 @@
     </div>
   </div>
 
-  <!-- Toast container -->
   <div id="toast-container"></div>
 
   <script>
     // ============================================================================
     // ESTADO GLOBAL
     // ============================================================================
-    let API_BASE = '';
-    let orders = [];
-    let pollInterval = null;
-    let heartbeatInterval = null;
-    let fetchFailCount = 0;
-    const MAX_FETCH_FAILS = 3;
-    let audioContext = null;
-    let isConnected = false; // ← NOVO: Flag de conexão
+    var API_BASE = '';
+    var orders = [];
+    var pollInterval = null;
+    var heartbeatInterval = null;
+    var fetchFailCount = 0;
+    var MAX_FETCH_FAILS = 3;
+    var audioContext = null;
+    var isConnected = false;
+    
+    // ← NOVO: Detectar iOS para ajustes de compatibilidade
+    var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+    if (isIOS) {
+      console.log('iOS detectado - aplicando ajustes de compatibilidade');
+    }
+
+    // ============================================================================
+    // ← NOVO: FUNÇÃO PARA FORMATAR NOME DA MESA (DELIVERY FIX)
+    // ============================================================================
+    function formatMesaDisplay(order) {
+      var mesa = order.mesa || 'Mesa';
+      
+      // Detectar delivery por tipo ou por nome
+      if (order.tipo === 'delivery' || order.tipo === 'ifood' || order.isDelivery) {
+        return '🚚 Entrega';
+      }
+      
+      // Corrigir nomes inválidos
+      if (mesa === 'Unknown' || mesa === 'Desconhecida' || !mesa) {
+        return '📦 Pedido';
+      }
+      
+      return mesa;
+    }
+
+    // ← NOVO: Função de escape HTML para segurança
+    function escapeHtml(str) {
+      if (!str) return '';
+      var div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
 
     // ============================================================================
     // INICIALIZAÇÃO ROBUSTA
     // ============================================================================
-    window.onload = () => {
-      console.log('🚀 Kitchen Flow TV v1.2 inicializando...');
+    window.onload = function() {
+      console.log('🚀 Kitchen Flow TV v1.3 inicializando...');
       
-      const urlParams = new URLSearchParams(window.location.search);
-      const urlIp = urlParams.get('ip');
-      const savedIp = localStorage.getItem('tv_display_ip');
+      var urlParams = new URLSearchParams(window.location.search);
+      var urlIp = urlParams.get('ip');
+      var savedIp = localStorage.getItem('tv_display_ip');
       
-      // Prioridade: URL > localStorage > Modal
       if (urlIp) {
         console.log('🔌 IP via URL:', urlIp);
         setApiBase(urlIp);
@@ -306,74 +332,66 @@
         setApiBase(savedIp);
       } else {
         console.log('🔌 Mostrando modal de configuração');
-        const modal = document.getElementById('config-modal');
+        var modal = document.getElementById('config-modal');
         if (modal) modal.classList.add('visible');
-        const input = document.getElementById('ip-input');
+        var input = document.getElementById('ip-input');
         if (input) input.focus();
       }
 
       updateClock();
       setInterval(updateClock, 1000);
       
-      // Enter para submeter no modal
-      const ipInput = document.getElementById('ip-input');
+      var ipInput = document.getElementById('ip-input');
       if (ipInput) {
-        ipInput.addEventListener('keypress', (e) => {
+        ipInput.addEventListener('keypress', function(e) {
           if (e.key === 'Enter') saveConfig();
         });
       }
     };
 
     // ============================================================================
-    // CONFIGURAÇÃO DE IP (CORRIGIDA)
+    // CONFIGURAÇÃO DE IP
     // ============================================================================
     function saveConfig() {
-      const input = document.getElementById('ip-input');
-      const errorEl = document.getElementById('config-error');
-      const btn = document.getElementById('connect-btn');
+      var input = document.getElementById('ip-input');
+      var errorEl = document.getElementById('config-error');
+      var btn = document.getElementById('connect-btn');
       
       if (!input || !errorEl || !btn) return;
       
-      const ip = input.value.trim();
+      var ip = input.value.trim();
       
-      // Validação
       if (!ip) {
         errorEl.textContent = '❌ Digite um IP válido';
         input.focus();
         return;
       }
       
-      // Regex básico para IPv4
-      const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
+      var ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
       if (!ipRegex.test(ip)) {
         errorEl.textContent = '❌ Formato inválido. Use: 192.168.0.100';
         input.focus();
         return;
       }
       
-      // Feedback visual
       btn.disabled = true;
       btn.textContent = 'Conectando...';
       errorEl.textContent = '';
       
-      // Salvar ANTES de tentar conectar
       localStorage.setItem('tv_display_ip', ip);
       console.log('✅ IP salvo no localStorage:', ip);
       
-      // Atualizar URL
-      const newUrl = `${window.location.pathname}?ip=${ip}`;
+      var newUrl = window.location.pathname + '?ip=' + ip;
       window.history.replaceState({}, '', newUrl);
       
-      // Iniciar conexão
       setApiBase(ip);
     }
 
     function setApiBase(ip) {
-      API_BASE = `http://${ip}:4545`;
-      const modal = document.getElementById('config-modal');
+      API_BASE = 'http://' + ip + ':4545';
+      var modal = document.getElementById('config-modal');
       if (modal) modal.classList.remove('visible');
       
-      // Garantia dupla
       localStorage.setItem('tv_display_ip', ip);
       
       connect();
@@ -383,44 +401,44 @@
     // CLOCK E UI
     // ============================================================================
     function updateClock() {
-      const clockEl = document.getElementById('clock');
+      var clockEl = document.getElementById('clock');
       if (!clockEl) return;
       
-      const now = new Date();
+      var now = new Date();
       clockEl.textContent = now.toLocaleTimeString('pt-BR', {hour: '2-digit', minute:'2-digit'});
     }
 
     function updateLastUpdate() {
-      const lastUpdateEl = document.getElementById('last-update');
+      var lastUpdateEl = document.getElementById('last-update');
       if (!lastUpdateEl) return;
       
-      const now = new Date();
-      lastUpdateEl.textContent = `🔄 Última atualização: ${now.toLocaleTimeString('pt-BR')}`;
+      var now = new Date();
+      lastUpdateEl.textContent = '🔄 Última atualização: ' + now.toLocaleTimeString('pt-BR');
     }
 
-    // ← NOVO: Toast notifications
-    function showToast(message, duration = 3000) {
-      const container = document.getElementById('toast-container');
+    function showToast(message, duration) {
+      duration = duration || 3000;
+      var container = document.getElementById('toast-container');
       if (!container) return;
       
-      const toast = document.createElement('div');
+      var toast = document.createElement('div');
       toast.className = 'toast';
       toast.textContent = message;
       container.appendChild(toast);
       
-      requestAnimationFrame(() => toast.classList.add('show'));
+      requestAnimationFrame(function() { toast.classList.add('show'); });
       
-      setTimeout(() => {
+      setTimeout(function() {
         toast.classList.remove('show');
-        setTimeout(() => toast.remove(), 300);
+        setTimeout(function() { toast.remove(); }, 300);
       }, duration);
     }
 
     // ============================================================================
-    // CONEXÃO E POLLING (CORRIGIDO E ROBUSTO)
+    // CONEXÃO E POLLING
     // ============================================================================
     function connect() {
-      const statusText = document.getElementById('status-text');
+      var statusText = document.getElementById('status-text');
       if (statusText) {
         statusText.textContent = '🟡 Conectando...';
         statusText.className = 'status loading';
@@ -428,148 +446,139 @@
       
       isConnected = false;
       
-      // Limpar intervalos anteriores
       if (pollInterval) clearInterval(pollInterval);
       if (heartbeatInterval) clearInterval(heartbeatInterval);
       
-      // Busca inicial
       fetchOrders();
       
-      // Polling de pedidos a cada 5 segundos
-      pollInterval = setInterval(fetchOrders, 5000);
+      // ← MELHORADO: Polling mais frequente para iOS
+      var pollIntervalMs = isIOS ? 2000 : 5000;
+      pollInterval = setInterval(fetchOrders, pollIntervalMs);
       
-      // ← NOVO: Heartbeat a cada 30 segundos para verificar saúde
       heartbeatInterval = setInterval(checkHealth, 30000);
     }
 
-    async function fetchOrders() {
+    function fetchOrders() {
       if (!API_BASE) return;
       
-      try {
-        // Cache busting
-        const url = `${API_BASE}/api/waiter/orders?_=${Date.now()}`;
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 8000);
-        
-        const res = await fetch(url, { 
-          signal: controller.signal,
-          cache: 'no-cache'
-        });
-        
+      // ← MELHORADO: Cache busting mais agressivo para iOS
+      var url = API_BASE + '/api/waiter/orders?_=' + Date.now();
+      if (isIOS) url += '&_=' + Math.random();
+      
+      var controller = new AbortController();
+      var timeoutMs = isIOS ? 6000 : 8000;
+      var timeoutId = setTimeout(function() { controller.abort(); }, timeoutMs);
+      
+      fetch(url, { 
+        signal: controller.signal,
+        cache: 'no-cache',
+        headers: { 'Accept': 'application/json' }
+      }).then(function(res) {
         clearTimeout(timeoutId);
-        
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        
-        const data = await res.json();
-        
-        // ← NOVO: Validar estrutura da resposta
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      }).then(function(data) {
         if (!data || typeof data !== 'object') {
           throw new Error('Resposta inválida');
         }
         
-        const newOrders = Array.isArray(data.orders) ? data.orders : [];
+        var newOrders = Array.isArray(data.orders) ? data.orders : [];
         
-        // Detectar novos pedidos prontos
         checkAlerts(orders, newOrders);
         orders = newOrders;
         render(orders);
         
-        // ← CORREÇÃO: Marcar como conectado ao receber QUALQUER resposta válida
         if (!isConnected) {
           isConnected = true;
           console.log('✅ Conectado ao Bridge');
           showToast('✅ Conectado ao servidor');
         }
         
-        // Resetar contador de falhas
         if (fetchFailCount > 0) {
           console.log('✅ Conexão restaurada após', fetchFailCount, 'falhas');
           showToast('🟢 Conexão restaurada');
         }
         fetchFailCount = 0;
         
-        // Atualizar status
-        const statusText = document.getElementById('status-text');
+        var statusText = document.getElementById('status-text');
         if (statusText) {
           statusText.textContent = '🟢 Conectado';
           statusText.className = 'status online';
         }
         updateLastUpdate();
         
-      } catch (e) {
+      }).catch(function(e) {
         fetchFailCount++;
-        console.warn(`⚠️ Falha ${fetchFailCount}/${MAX_FETCH_FAILS}:`, e.message);
+        console.warn('⚠️ Falha ' + fetchFailCount + '/' + MAX_FETCH_FAILS + ':', e.message);
         
-        // Só marca offline após múltiplas falhas
         if (fetchFailCount >= MAX_FETCH_FAILS) {
           isConnected = false;
-          const statusText = document.getElementById('status-text');
+          var statusText = document.getElementById('status-text');
           if (statusText) {
             statusText.textContent = '🔴 Sem conexão';
             statusText.className = 'status offline';
           }
           
-          // Toast a cada 5 falhas para não spam
           if (fetchFailCount % 5 === 0) {
             showToast('⚠️ Verificando conexão...');
-          }
-        }
-      }
-    }
-
-    // ← NOVO: Verificação de saúde periódica
-    async function checkHealth() {
-      if (!API_BASE || !isConnected) return;
-      
-      try {
-        const url = `${API_BASE}/api/status?_=${Date.now()}`;
-        const res = await fetch(url, { 
-          signal: AbortSignal.timeout(5000),
-          cache: 'no-cache'
-        });
-        
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        
-        console.log('💓 Heartbeat OK');
-      } catch (e) {
-        console.warn('💔 Heartbeat falhou:', e.message);
-        // Não muda status aqui, deixa o fetchOrders tratar
-      }
-    }
-
-    // ============================================================================
-    // SISTEMA DE ALERTAS (CORRIGIDO E ROBUSTO)
-    // ============================================================================
-    function checkAlerts(oldOrders, newOrders) {
-      newOrders.forEach(newOrder => {
-        if (newOrder.status === 'concluido') {
-          const oldOrder = oldOrders.find(o => o.id === newOrder.id);
-          // Só alerta se é um pedido NOVO na lista de prontos
-          if (!oldOrder || oldOrder.status !== 'concluido') {
-            triggerAlert(newOrder.mesa);
           }
         }
       });
     }
 
-    function triggerAlert(mesa) {
-      console.log(`🔔 Alerta: Mesa ${mesa} pronta!`);
+    function checkHealth() {
+      if (!API_BASE || !isConnected) return;
       
-      // Som discreto com contexto compartilhado
+      var url = API_BASE + '/api/status?_=' + Date.now();
+      
+      fetch(url, { 
+        cache: 'no-cache'
+      }).then(function(res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        console.log('💓 Heartbeat OK');
+      }).catch(function(e) {
+        console.warn('💔 Heartbeat falhou:', e.message);
+      });
+    }
+
+    // ============================================================================
+    // SISTEMA DE ALERTAS
+    // ============================================================================
+    function checkAlerts(oldOrders, newOrders) {
+      for (var i = 0; i < newOrders.length; i++) {
+        var newOrder = newOrders[i];
+        if (newOrder.status === 'concluido') {
+          var oldOrder = null;
+          for (var j = 0; j < oldOrders.length; j++) {
+            if (oldOrders[j].id === newOrder.id) {
+              oldOrder = oldOrders[j];
+              break;
+            }
+          }
+          if (!oldOrder || oldOrder.status !== 'concluido') {
+            triggerAlert(newOrder);
+          }
+        }
+      }
+    }
+
+    function triggerAlert(order) {
+      var mesaDisplay = formatMesaDisplay(order);
+      console.log('🔔 Alerta: ' + mesaDisplay + ' pronto!');
+      
       try {
         if (!audioContext) {
-          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          var AudioCtx = window.AudioContext || window.webkitAudioContext;
           if (AudioCtx) audioContext = new AudioCtx();
         }
         
         if (audioContext) {
-          // Resume se estiver suspenso
           if (audioContext.state === 'suspended') {
             audioContext.resume();
           }
           
-          const osc = audioContext.createOscillator();
-          const gain = audioContext.createGain();
+          var osc = audioContext.createOscillator();
+          var gain = audioContext.createGain();
           osc.connect(gain);
           gain.connect(audioContext.destination);
           
@@ -586,16 +595,31 @@
         console.warn('⚠️ Som não reproduzido:', e.message);
       }
 
-      // Scroll para o topo
-      const readyList = document.getElementById('ready-list');
+      var readyList = document.getElementById('ready-list');
       if (readyList) readyList.scrollTop = 0;
     }
 
-    // Inicializar AudioContext no primeiro clique
-    document.addEventListener('click', () => {
+    // ← MELHORADO: Inicializar AudioContext no primeiro toque (iOS)
+    document.addEventListener('touchstart', function() {
       if (!audioContext) {
         try {
-          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          var AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (AudioCtx) {
+            audioContext = new AudioCtx();
+            audioContext.resume();
+            console.log('🔊 AudioContext inicializado');
+          }
+        } catch(e) {
+          console.warn('⚠️ AudioContext falhou:', e.message);
+        }
+      }
+    }, { once: true, passive: true });
+
+    // Também inicializar no clique (desktop)
+    document.addEventListener('click', function() {
+      if (!audioContext) {
+        try {
+          var AudioCtx = window.AudioContext || window.webkitAudioContext;
           if (AudioCtx) {
             audioContext = new AudioCtx();
             audioContext.resume();
@@ -608,80 +632,95 @@
     }, { once: true });
 
     // ============================================================================
-    // RENDERIZAÇÃO
+    // RENDERIZAÇÃO - CORRIGIDO: Delivery fix
     // ============================================================================
     function render(ordersList) {
-      const prepList = document.getElementById('prep-list');
-      const readyList = document.getElementById('ready-list');
+      var prepList = document.getElementById('prep-list');
+      var readyList = document.getElementById('ready-list');
       
       if (!prepList || !readyList) return;
       
       prepList.innerHTML = '';
       readyList.innerHTML = '';
 
-      // Filtrar e ordenar
-      const prep = ordersList
-        .filter(o => o.status !== 'concluido' && o.status !== 'cancelled')
-        .sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+      var prep = [];
+      var ready = [];
       
-      const ready = ordersList
-        .filter(o => o.status === 'concluido')
-        .sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
+      for (var i = 0; i < ordersList.length; i++) {
+        var order = ordersList[i];
+        if (order.status === 'concluido') {
+          ready.push(order);
+        } else if (order.status !== 'cancelled') {
+          prep.push(order);
+        }
+      }
+      
+      prep.sort(function(a, b) {
+        return new Date(b.timestamp) - new Date(a.timestamp);
+      });
+      
+      ready.sort(function(a, b) {
+        return new Date(b.timestamp) - new Date(a.timestamp);
+      });
 
-      // Renderizar ou empty state
       if (prep.length === 0) {
         prepList.innerHTML = '<div class="empty-state">Nenhum pedido em produção</div>';
       } else {
-        prep.forEach(order => prepList.appendChild(createCard(order, false)));
+        for (var i = 0; i < prep.length; i++) {
+          prepList.appendChild(createCard(prep[i], false));
+        }
       }
       
       if (ready.length === 0) {
         readyList.innerHTML = '<div class="empty-state">Nenhum pedido pronto</div>';
       } else {
-        ready.forEach(order => readyList.appendChild(createCard(order, true)));
+        for (var i = 0; i < ready.length; i++) {
+          readyList.appendChild(createCard(ready[i], true));
+        }
       }
     }
 
     function createCard(order, isReady) {
-      const div = document.createElement('div');
-      div.className = `card ${isReady ? 'ready' : ''}`;
+      var div = document.createElement('div');
+      div.className = 'card ' + (isReady ? 'ready' : '');
       
-      const itens = order.itens || [];
-      const itemsHtml = itens.length > 0 
-        ? itens.map(i => 
-            `<li><span class="qty">${i.quantidade || 1}x</span> ${i.item || 'Item'}</li>`
-          ).join('')
-        : '<li><em>Sem itens</em></li>';
+      // ← CORREÇÃO: Usar formatMesaDisplay para delivery
+      var mesaDisplay = formatMesaDisplay(order);
+      
+      var itens = order.itens || [];
+      var itemsHtml = '';
+      
+      if (itens.length > 0) {
+        for (var i = 0; i < itens.length; i++) {
+          var item = itens[i];
+          itemsHtml += '<li><span class="qty">' + (item.quantidade || 1) + 'x</span> ' + escapeHtml(item.item || 'Item') + '</li>';
+        }
+      } else {
+        itemsHtml = '<li><em>Sem itens</em></li>';
+      }
 
-      const priorityBadge = order.hasPriority 
+      var priorityBadge = order.hasPriority 
         ? '<span class="badge kids">👶 PRIORIDADE</span>' 
         : '';
 
-      div.innerHTML = `
-        <div class="card-info">
-          <h2>${order.mesa || 'Mesa ?'} ${priorityBadge}</h2>
-          <ul class="card-items">${itemsHtml}</ul>
-        </div>
-        <div class="card-meta">
-          <div class="timer">${formatTime(order.elapsedMinutes)}</div>
-        </div>
-      `;
+      div.innerHTML = '<div class="card-info"><h2>' + escapeHtml(mesaDisplay) + ' ' + priorityBadge + '</h2><ul class="card-items">' + itemsHtml + '</ul></div><div class="card-meta"><div class="timer">' + formatTime(order.elapsedMinutes) + '</div></div>';
+      
       return div;
     }
 
     function formatTime(minutes) {
       if (!minutes && minutes !== 0) return '0min';
       if (minutes < 1) return '< 1min';
-      if (minutes < 60) return `${minutes}min`;
-      const h = Math.floor(minutes / 60);
-      const m = minutes % 60;
-      return `${h}h ${m}min`;
+      if (minutes < 60) return minutes + 'min';
+      var h = Math.floor(minutes / 60);
+      var m = minutes % 60;
+      return h + 'h ' + m + 'min';
     }
 
     // ============================================================================
     // CLEANUP AO FECHAR
     // ============================================================================
-    window.addEventListener('beforeunload', () => {
+    window.addEventListener('beforeunload', function() {
       if (pollInterval) clearInterval(pollInterval);
       if (heartbeatInterval) clearInterval(heartbeatInterval);
       if (audioContext) {
