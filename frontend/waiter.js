@@ -1,7 +1,7 @@
 /**
- * Kitchen Flow - Página do Garçom v1.4
+ * Kitchen Flow - Página do Garçom v1.5
  * Funcionalidades: PIN diário, PWA notifications, filtro salvo, polling, pull-to-refresh
- * Hotfix v1.4: Timeout explícito + proteção DOM + feedback visual robusto
+ * Hotfix v1.5: Delivery fix + iOS compat + proteção DOM + feedback visual robusto
  */
 (() => {
   'use strict';
@@ -10,47 +10,39 @@
   // CONFIGURAÇÕES INTELIGENTES
   // ============================================================================
 
-  // ← NOVO: API_BASE dinâmica com fallback
   const getApiBase = () => {
-    // 1. Prioridade: Parâmetro na URL (ex: ?api=http://192.168.0.190:4545)
     const urlParams = new URLSearchParams(window.location.search);
     const urlApi = urlParams.get('api');
     if (urlApi && urlApi.startsWith('http')) {
-      console.log('🔌 API definida via URL:', urlApi);
+      console.log('API definida via URL:', urlApi);
       return urlApi;
     }
 
-    // 2. Prioridade: localStorage (configuração salva pelo usuário)
     const saved = localStorage.getItem('kfm_api_base');
     if (saved && saved.startsWith('http')) {
-      console.log('🔌 API carregada do localStorage:', saved);
+      console.log('API carregada do localStorage:', saved);
       return saved;
     }
 
-    // 3. Detectar ambiente
     const hostname = window.location.hostname;
     
-    // Se estiver em domínio público (Netlify/Vercel), usar IPs locais comuns
     if (hostname.includes('netlify') || hostname.includes('vercel') || !hostname.includes('localhost')) {
-      console.log('🌐 Ambiente cloud detectado. Usando fallback de IPs locais.');
+      console.log('Ambiente cloud detectado. Usando fallback de IPs locais.');
       return 'http://192.168.0.190:4545';
     }
     
-    // 4. Default: localhost (desenvolvimento)
     return 'http://localhost:4545';
   };
 
   const API_BASE = getApiBase();
-  const POLL_INTERVAL = 30000; // 30 segundos
-  const PRIORITY_KEYWORDS = ['kids', 'infantil', 'criança', 'batata', 'porção', 'tirinhas', 'salada', 'nugget'];
+  const POLL_INTERVAL = 30000;
+  const PRIORITY_KEYWORDS = ['kids', 'infantil', 'crianca', 'batata', 'porcao', 'tirinhas', 'salada', 'nugget'];
 
-  // Configurações de PIN e Notificações
   const PIN_STORAGE_KEY = 'kfm_waiter_pin';
   const PIN_DATE_KEY = 'kfm_waiter_pin_date';
   const FILTER_STORAGE_KEY = 'kfm_waiter_filter';
   const NOTIFICATION_SOUND_ENABLED = true;
 
-  // Estado
   let orders = [];
   let currentFilter = 'all';
   let currentGarcom = '';
@@ -61,9 +53,14 @@
   let notificationPermission = 'default';
   let fetchFailCount = 0;
   const MAX_FETCH_FAILS = 3;
-  let pollIntervalId = null; // ← NOVO: Controlar intervalo de polling
+  let pollIntervalId = null;
 
-  // Seletores DOM
+  // ← NOVO: Detectar iOS para ajustes de compatibilidade
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+  if (isIOS) {
+    console.log('iOS detectado - aplicando ajustes de compatibilidade');
+  }
+
   const $ = (sel, context = document) => context.querySelector(sel);
   const $$ = (sel, context = document) => context.querySelectorAll(sel);
 
@@ -83,11 +80,30 @@
   };
 
   // ============================================================================
+  // ← NOVO: FUNÇÃO PARA FORMATAR NOME DA MESA (DELIVERY FIX)
+  // ============================================================================
+
+  function formatMesaDisplay(order) {
+    var mesa = order.mesa || 'Mesa';
+    
+    // Detectar delivery por tipo ou por nome
+    if (order.tipo === 'delivery' || order.tipo === 'ifood' || order.isDelivery) {
+      return '🚚 Entrega';
+    }
+    
+    // Corrigir nomes inválidos
+    if (mesa === 'Unknown' || mesa === 'Desconhecida' || !mesa) {
+      return '📦 Pedido';
+    }
+    
+    return mesa;
+  }
+
+  // ============================================================================
   // FETCH ROBUSTO COM TIMEOUT E FALLBACK DE IPs
   // ============================================================================
 
   async function fetchWithFallback(url, options = {}) {
-    // Lista de bases para tentar (fallback)
     const bases = [
       API_BASE,
       API_BASE.replace('192.168.0.190', '192.168.1.190'),
@@ -102,11 +118,12 @@
       const testUrl = url.toString().replace(API_BASE, base);
       
       try {
-        console.debug(`🔌 Tentando: ${testUrl}`);
+        console.debug('Tentando:', testUrl);
         
-        // Timeout explícito de 10 segundos
+        // ← MELHORADO: Timeout menor para iOS
+        const timeoutMs = isIOS ? 8000 : 10000;
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
         
         const response = await fetch(testUrl, {
           ...options,
@@ -119,16 +136,16 @@
         if (response.ok) {
           if (base !== API_BASE) {
             localStorage.setItem('kfm_api_base', base);
-            console.log(`✅ API funcionando em: ${base}`);
-            toast(`🟢 Conectado ao Bridge em ${base}`, 'success', 3000);
+            console.log('API funcionando em:', base);
+            toast('Conectado ao Bridge em ' + base, 'success', 3000);
           }
           return response;
         }
         
-        lastError = new Error(`HTTP ${response.status}`);
+        lastError = new Error('HTTP ' + response.status);
       } catch (e) {
         lastError = e;
-        console.debug(`❌ Falha em ${base}: ${e.name} - ${e.message}`);
+        console.debug('Falha em', base + ':', e.name, '-', e.message);
       }
     }
     
@@ -173,7 +190,7 @@
     const savedPin = getSavedPin();
     if (savedPin) {
       try {
-        const serverPin = await fetchWithFallback(`${API_BASE}/api/waiter/pin`, { cache: 'no-cache' });
+        const serverPin = await fetchWithFallback(API_BASE + '/api/waiter/pin', { cache: 'no-cache' });
         const data = await serverPin.json();
         if (savedPin === data.pin) {
           pinValidated = true;
@@ -182,7 +199,7 @@
         }
         clearPin();
       } catch (e) {
-        console.warn('⚠️ Não foi possível verificar PIN:', e.message);
+        console.warn('Não foi possível verificar PIN:', e.message);
       }
     }
 
@@ -272,7 +289,7 @@
         submit.textContent = 'Verificando...';
 
         try {
-          const response = await fetchWithFallback(`${API_BASE}/api/waiter/pin`, { cache: 'no-cache' });
+          const response = await fetchWithFallback(API_BASE + '/api/waiter/pin', { cache: 'no-cache' });
           const data = await response.json();
           
           if (pin === data.pin) {
@@ -323,7 +340,7 @@
         notificationPermission = permission;
         return permission === 'granted';
       } catch (e) {
-        console.warn('⚠️ Não foi possível solicitar permissão de notificação:', e.message);
+        console.warn('Não foi possível solicitar permissão de notificação:', e.message);
         return false;
       }
     }
@@ -346,29 +363,31 @@
       osc.type = 'sine';
       osc.start(); osc.stop(ctx.currentTime + 0.2);
       setTimeout(() => ctx.close(), 250);
-    } catch (e) { console.warn('⚠️ Não foi possível tocar som:', e.message); }
+    } catch (e) { console.warn('Não foi possível tocar som:', e.message); }
   }
 
   function vibrateDevice(pattern = [100, 50, 100]) {
     if ('vibrate' in navigator) {
-      try { navigator.vibrate(pattern); } catch (e) { console.warn('⚠️ Não foi possível vibrar:', e.message); }
+      try { navigator.vibrate(pattern); } catch (e) { console.warn('Não foi possível vibrar:', e.message); }
     }
   }
 
   function showOrderReadyNotification(order) {
-    toast(`✅ ${order.mesa} • ${order.itens?.[0]?.item || 'Pedido'} PRONTO!`, 'success', 6000);
+    // ← CORREÇÃO: Usar formatMesaDisplay para notificações
+    var mesaDisplay = formatMesaDisplay(order);
+    toast('✅ ' + mesaDisplay + ' • ' + (order.itens && order.itens[0] ? order.itens[0].item : 'Pedido') + ' PRONTO!', 'success', 6000);
     playNotificationSound();
     vibrateDevice([200, 100, 200]);
     
     if (notificationPermission === 'granted' && 'Notification' in window) {
       try {
         new Notification('🍳 Pedido Pronto!', {
-          body: `${order.mesa} • Pronto para retirada`,
+          body: mesaDisplay + ' • Pronto para retirada',
           icon: 'fazenda-waiter-192.png',
-          tag: `order-${order.id}`,
+          tag: 'order-' + order.id,
           requireInteraction: true
         });
-      } catch (e) { console.warn('⚠️ Não foi possível mostrar notificação:', e.message); }
+      } catch (e) { console.warn('Não foi possível mostrar notificação:', e.message); }
     }
   }
 
@@ -379,7 +398,7 @@
   function saveFilterPreferences() {
     try {
       localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify({ filter: currentFilter, garcom: currentGarcom, timestamp: Date.now() }));
-    } catch (e) { console.warn('⚠️ Falha ao salvar preferências:', e.message); }
+    } catch (e) { console.warn('Falha ao salvar preferências:', e.message); }
   }
 
   function loadFilterPreferences() {
@@ -391,7 +410,7 @@
         if (garcom) currentGarcom = garcom;
         return true;
       }
-    } catch (e) { console.warn('⚠️ Falha ao carregar preferências:', e.message); }
+    } catch (e) { console.warn('Falha ao carregar preferências:', e.message); }
     return false;
   }
 
@@ -408,7 +427,7 @@
 
   function cacheOrders(ordersToCache) {
     try { localStorage.setItem(CACHE_KEY, JSON.stringify({ orders: ordersToCache, timestamp: Date.now() })); }
-    catch (e) { console.warn('⚠️ Falha ao salvar cache:', e.message); }
+    catch (e) { console.warn('Falha ao salvar cache:', e.message); }
   }
 
   function loadCachedOrders() {
@@ -419,7 +438,7 @@
         if (Date.now() - timestamp < CACHE_TTL) return cachedOrders;
         localStorage.removeItem(CACHE_KEY);
       }
-    } catch (e) { console.warn('⚠️ Falha ao carregar cache:', e.message); }
+    } catch (e) { console.warn('Falha ao carregar cache:', e.message); }
     return null;
   }
 
@@ -429,10 +448,10 @@
 
   function formatTime(minutes) {
     if (!minutes || minutes < 1) return '< 1min';
-    if (minutes < 60) return `${minutes}min`;
+    if (minutes < 60) return minutes + 'min';
     const h = Math.floor(minutes / 60);
     const m = minutes % 60;
-    return `${h}h ${m}min`;
+    return h + 'h ' + m + 'min';
   }
 
   function getStatusConfig(status) {
@@ -446,13 +465,19 @@
   }
 
   function isPriorityOrder(order) {
-    return order.hasPriority || order.itens?.some(i => i.item && PRIORITY_KEYWORDS.some(kw => i.item.toLowerCase().includes(kw)));
+    return order.hasPriority || (order.itens && order.itens.some(function(i) { 
+      return i.item && PRIORITY_KEYWORDS.some(function(kw) { 
+        return i.item.toLowerCase().indexOf(kw) !== -1; 
+      }); 
+    }));
   }
 
-  function toast(message, type = 'info', duration = 3000) {
-    if (!els.toasts) return; // ← NOVO: Proteção contra elemento inexistente
+  function toast(message, type, duration) {
+    type = type || 'info';
+    duration = duration || 3000;
+    if (!els.toasts) return;
     const t = document.createElement('div');
-    t.className = `toast ${type}`;
+    t.className = 'toast ' + type;
     t.textContent = message;
     t.setAttribute('role', 'alert');
     els.toasts.appendChild(t);
@@ -469,9 +494,9 @@
 
   async function fetchWaitersList() {
     try {
-      const response = await fetchWithFallback(`${API_BASE}/api/waiter/waiters`, { cache: 'no-cache' });
+      const response = await fetchWithFallback(API_BASE + '/api/waiter/waiters', { cache: 'no-cache' });
       const data = await response.json();
-      if (data.success && data.waiters?.length > 0) {
+      if (data.success && data.waiters && data.waiters.length > 0) {
         els.garcomSelect.innerHTML = '<option value="">Todos os garçons</option>';
         data.waiters.forEach(name => {
           const opt = document.createElement('option');
@@ -480,12 +505,12 @@
         });
         const urlParams = new URLSearchParams(window.location.search);
         const garcomParam = urlParams.get('garcom') || currentGarcom;
-        if (garcomParam && data.waiters.includes(garcomParam)) {
+        if (garcomParam && data.waiters.indexOf(garcomParam) !== -1) {
           els.garcomSelect.value = garcomParam; currentGarcom = garcomParam;
         }
       }
     } catch (e) {
-      console.warn('⚠️ Falha ao carregar lista de garçons:', e.message);
+      console.warn('Falha ao carregar lista de garçons:', e.message);
       const waiters = ['João', 'Maria', 'Carlos', 'Ana'];
       els.garcomSelect.innerHTML = '<option value="">Todos os garçons</option>';
       waiters.forEach(name => {
@@ -497,16 +522,16 @@
     }
   }
 
-  // ← CORRIGIDO: fetchOrders com status robusto e cache busting
   async function fetchOrders() {
     if (isRefreshing) return;
     isRefreshing = true;
     updateConnectionStatus('loading');
 
     try {
-      const url = new URL(`${API_BASE}/api/waiter/orders`);
-      url.searchParams.set('_', Date.now()); // Cache busting
-      if (currentGarcom) url.searchParams.set('garcom', currentGarcom);
+      // ← MELHORADO: Cache busting mais agressivo para iOS
+      var url = API_BASE + '/api/waiter/orders?_=' + Date.now();
+      if (isIOS) url += '&_=' + Math.random(); // iOS precisa de mais cache busting
+      if (currentGarcom) url += '&garcom=' + encodeURIComponent(currentGarcom);
 
       const response = await fetchWithFallback(url, { 
         cache: 'no-cache', 
@@ -514,7 +539,6 @@
       });
       const data = await response.json();
 
-      // ← NOVO: Validar estrutura da resposta
       if (!data || typeof data !== 'object') {
         throw new Error('Resposta inválida do servidor');
       }
@@ -528,29 +552,34 @@
         updateConnectionStatus('online');
         fetchFailCount = 0;
 
-        const newReady = orders.filter(o => o.status === 'concluido' && !o.notified && (!currentGarcom || o.garcom === currentGarcom));
+        const newReady = orders.filter(function(o) { 
+          return o.status === 'concluido' && !o.notified && (!currentGarcom || o.garcom === currentGarcom); 
+        });
         if (newReady.length > 0) {
-          newReady.forEach(order => { showOrderReadyNotification(order); order.notified = true; });
+          newReady.forEach(function(order) { 
+            showOrderReadyNotification(order); 
+            order.notified = true; 
+          });
         }
       } else {
         throw new Error(data.error || 'Erro desconhecido');
       }
     } catch (e) {
-      console.error('❌ Erro fetchOrders:', e.message);
+      console.error('Erro fetchOrders:', e.message);
       fetchFailCount++;
       
       if (fetchFailCount >= MAX_FETCH_FAILS) {
         updateConnectionStatus('offline');
         toast('⚠️ Conexão instável. Verifique o PC do caixa.', 'warning', 5000);
       } else {
-        console.warn(`⚠️ Falha ${fetchFailCount}/${MAX_FETCH_FAILS} na conexão`);
+        console.warn('Falha ' + fetchFailCount + '/' + MAX_FETCH_FAILS + ' na conexão');
       }
       
       const cached = loadCachedOrders();
-      if (cached?.length > 0) {
+      if (cached && cached.length > 0) {
         orders = cached;
         renderOrders();
-        console.log('📦 Usando cache offline');
+        console.log('Usando cache offline');
       }
     } finally {
       isRefreshing = false;
@@ -559,11 +588,11 @@
   }
 
   // ============================================================================
-  // RENDER
+  // RENDER - CORRIGIDO: Delivery fix
   // ============================================================================
 
   function renderOrders() {
-    if (!els.ordersList) return; // ← NOVO: Proteção
+    if (!els.ordersList) return;
     
     cacheOrders(orders);
     let filtered = orders;
@@ -571,14 +600,14 @@
     if (currentFilter !== 'all') {
       const statusMap = { 'pending': ['pendente'], 'preparing': ['em-preparo'], 'ready': ['concluido'], 'priority': [] };
       if (currentFilter === 'priority') {
-        filtered = filtered.filter(o => isPriorityOrder(o));
+        filtered = filtered.filter(function(o) { return isPriorityOrder(o); });
       } else {
         const statuses = statusMap[currentFilter] || [];
-        filtered = filtered.filter(o => statuses.includes(o.status));
+        filtered = filtered.filter(function(o) { return statuses.indexOf(o.status) !== -1; });
       }
     }
 
-    if (els.ordersCount) els.ordersCount.textContent = `${filtered.length} pedido(s)`;
+    if (els.ordersCount) els.ordersCount.textContent = filtered.length + ' pedido(s)';
     if (filtered.length === 0) {
       els.ordersList.innerHTML = '';
       if (els.emptyState) els.emptyState.classList.remove('hidden');
@@ -586,44 +615,63 @@
     }
     if (els.emptyState) els.emptyState.classList.add('hidden');
 
-    filtered.sort((a, b) => {
+    filtered.sort(function(a, b) {
       const aPri = isPriorityOrder(a) ? 0 : 1;
       const bPri = isPriorityOrder(b) ? 0 : 1;
       if (aPri !== bPri) return aPri - bPri;
       return new Date(b.timestamp) - new Date(a.timestamp);
     });
 
-    els.ordersList.innerHTML = filtered.map(order => {
-      const statusCfg = getStatusConfig(order.status);
-      const hasPriority = isPriorityOrder(order);
-      const elapsed = order.elapsedMinutes || 0;
-      return `
-        <article class="order-card ${hasPriority ? 'priority' : ''} ${statusCfg.class}" data-order-id="${order.id}" role="listitem">
-          ${hasPriority ? `<div class="priority-badge">👶 Kids/Porção</div>` : ''}
-          <header class="order-header">
-            <div class="order-mesa">${order.mesa || 'Mesa'}</div>
-            <div class="order-status ${statusCfg.class}">
-              <span class="status-icon">${statusCfg.icon}</span>
-              <span class="status-label">${statusCfg.label}</span>
-            </div>
-          </header>
-          <div class="order-meta">
-            ${order.garcom ? `<span class="garcom">👨‍🍳 ${order.garcom}</span>` : ''}
-            <span class="elapsed">⏱️ ${formatTime(elapsed)}</span>
-          </div>
-          <ul class="order-items">
-            ${order.itens?.slice(0, 3).map(item => `
-              <li class="order-item ${item.priority ? 'priority-item' : ''}">
-                <span class="item-name">${item.item || 'Item'}</span>
-                <span class="item-qty">x${item.quantidade || 1}</span>
-                ${item.priority ? '<span class="item-priority">👶</span>' : ''}
-              </li>
-            `).join('') || '<li class="order-item empty"><small>Sem itens</small></li>'}
-            ${order.itens?.length > 3 ? `<li class="order-item more">+${order.itens.length - 3} mais...</li>` : ''}
-          </ul>
-          ${order.status === 'concluido' ? `<div class="ready-notice">✅ <strong>Pronto para retirada na boqueta!</strong></div>` : ''}
-        </article>`;
-    }).join('');
+    var html = '';
+    for (var i = 0; i < filtered.length; i++) {
+      var order = filtered[i];
+      var statusCfg = getStatusConfig(order.status);
+      var hasPriority = isPriorityOrder(order);
+      var elapsed = order.elapsedMinutes || 0;
+      
+      // ← CORREÇÃO: Usar formatMesaDisplay
+      var mesaDisplay = formatMesaDisplay(order);
+      
+      html += '<article class="order-card ' + (hasPriority ? 'priority ' : '') + statusCfg.class + '" data-order-id="' + order.id + '" role="listitem">';
+      if (hasPriority) html += '<div class="priority-badge">👶 Kids/Porção</div>';
+      html += '<header class="order-header"><div class="order-mesa">' + escapeHtml(mesaDisplay) + '</div>';
+      html += '<div class="order-status ' + statusCfg.class + '"><span class="status-icon">' + statusCfg.icon + '</span><span class="status-label">' + statusCfg.label + '</span></div></header>';
+      html += '<div class="order-meta">';
+      if (order.garcom) html += '<span class="garcom">Chef ' + escapeHtml(order.garcom) + '</span>';
+      html += '<span class="elapsed">⏱️ ' + formatTime(elapsed) + '</span></div>';
+      html += '<ul class="order-items">';
+      
+      if (order.itens && order.itens.length > 0) {
+        var maxItems = Math.min(order.itens.length, 3);
+        for (var j = 0; j < maxItems; j++) {
+          var item = order.itens[j];
+          html += '<li class="order-item ' + (item.priority ? 'priority-item' : '') + '">';
+          html += '<span class="item-name">' + escapeHtml(item.item || 'Item') + '</span>';
+          html += '<span class="item-qty">x' + (item.quantidade || 1) + '</span>';
+          if (item.priority) html += '<span class="item-priority">👶</span>';
+          html += '</li>';
+        }
+        if (order.itens.length > 3) {
+          html += '<li class="order-item more">+' + (order.itens.length - 3) + ' mais...</li>';
+        }
+      } else {
+        html += '<li class="order-item empty"><small>Sem itens</small></li>';
+      }
+      html += '</ul>';
+      
+      if (order.status === 'concluido') {
+        html += '<div class="ready-notice">✅ <strong>Pronto para retirada na boqueta!</strong></div>';
+      }
+      html += '</article>';
+    }
+    els.ordersList.innerHTML = html;
+  }
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    var div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
   }
 
   function updateLastUpdate() {
@@ -633,11 +681,11 @@
   }
 
   function updateConnectionStatus(status) {
-    if (!els.connStatus) return; // ← NOVO: Proteção
+    if (!els.connStatus) return;
     
     const dot = els.connStatus.querySelector('.status-dot');
     const text = els.connStatus.querySelector('.status-text');
-    if (dot) dot.className = `status-dot ${status}`;
+    if (dot) dot.className = 'status-dot ' + status;
     const labels = { 'online': 'Online', 'offline': 'Offline', 'loading': 'Atualizando...' };
     if (text) text.textContent = labels[status] || 'Desconhecido';
   }
@@ -691,7 +739,6 @@
       });
     });
 
-    // Pull to refresh
     let pullDistance = 0;
     const PULL_THRESHOLD = 100;
     document.addEventListener('touchstart', (e) => { if (window.scrollY === 0) pullStartY = e.touches[0].clientY; }, { passive: true });
@@ -745,7 +792,7 @@
   // ============================================================================
 
   async function init() {
-    console.log('🚀 Iniciando Kitchen Flow Garçom v1.4...');
+    console.log('🚀 Iniciando Kitchen Flow Garçom v1.5...');
     setupEventListeners();
     updateConnectionStatus(navigator.onLine ? 'online' : 'offline');
 
@@ -757,12 +804,12 @@
     await fetchWaitersList();
     await fetchOrders();
 
-    // Polling automático
+    // ← MELHORADO: Intervalo menor para iOS
+    var pollInterval = isIOS ? 20000 : POLL_INTERVAL;
     pollIntervalId = setInterval(() => { 
       if (!document.hidden && navigator.onLine && pinValidated) fetchOrders(); 
-    }, POLL_INTERVAL);
+    }, pollInterval);
     
-    // Verificação de expiração do PIN
     setInterval(() => {
       if (!isPinValidForToday(getSavedPin(), localStorage.getItem(PIN_DATE_KEY))) {
         console.log('🔒 PIN expirado'); clearPin(); pinValidated = false;
@@ -776,12 +823,12 @@
         .catch(err => console.warn('⚠️ [PWA] SW registration failed:', err));
     }
 
-    console.log('✅ Kitchen Flow Garçom v1.4 inicializado');
+    console.log('✅ Kitchen Flow Garçom v1.5 inicializado');
     console.log('🔗 API Base:', API_BASE);
     console.log('🔐 PIN:', pinValidated ? 'válido' : 'inválido');
+    console.log('📱 iOS:', isIOS ? 'Sim' : 'Não');
   }
 
-  // ← NOVO: Limpeza ao fechar a página
   window.addEventListener('beforeunload', () => {
     if (pollIntervalId) {
       clearInterval(pollIntervalId);
